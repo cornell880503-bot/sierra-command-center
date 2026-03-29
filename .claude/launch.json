@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sierra-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/kevinhsieh/Downloads/sierra-command-center && npm run dev -- --port 5174 --host"],
+      "port": 5174,
+      "autoPort": false
+    }
+  ]
+}

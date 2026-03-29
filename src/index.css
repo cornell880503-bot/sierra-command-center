@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+/* ── Sierra Design System: Light Edition ────────────────────────────────────── */
+@theme {
+  --color-bg:        #f6f5f3;
+  --color-surface:   #ffffff;
+  --color-surface2:  #fafafa;
+  --color-surface3:  #f3f4f6;
+
+  --color-border:    #e5e7eb;
+  --color-border2:   #d1d5db;
+  --color-border3:   #9ca3af;
+
+  --color-text:      #111827;
+  --color-text2:     #374151;
+  --color-muted:     #6b7280;
+  --color-dim:       #9ca3af;
+  --color-xdim:      #d1d5db;
+
+  --color-accent:    #00a86b;
+  --color-accent2:   #d1fae5;
+
+  --color-critical:  #dc2626;
+  --color-high:      #f97316;
+  --color-medium:    #ca8a04;
+  --color-low:       #16a34a;
+  --color-info:      #2563eb;
+
+  --color-platinum:  #7c3aed;
+  --color-gold:      #b45309;
+
+  --font-sans: 'Inter', 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'DM Mono', ui-monospace, monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: #f6f5f3;
+  color: #111827;
+  font-family: 'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 13px;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+
+/* ── Keyframes ──────────────────────────────────────────────────────────────── */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);   opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulseCritical {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+  50%       { box-shadow: 0 0 0 4px rgba(220,38,38,0.15); }
+}
+@keyframes pulseHigh {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(249,115,22,0); }
+  50%       { box-shadow: 0 0 0 4px rgba(249,115,22,0.15); }
+}
+@keyframes pulseGreen {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+@keyframes thinkDots {
+  0%, 80%, 100% { transform: scale(0.5); opacity: 0.3; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+@keyframes liveBlip {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+@keyframes stepReveal {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Utility classes ─────────────────────────────────────────────────────────── */
+.thinking-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #ca8a04;
+  animation: thinkDots 1.4s ease-in-out infinite;
+}
+.thinking-dot:nth-child(2) { animation-delay: 0.16s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.32s; }
+
+.priority-critical { animation: pulseCritical 2s ease-in-out infinite; }
+.priority-high     { animation: pulseHigh 2.5s ease-in-out infinite; }
+
+.shimmer-line {
+  background: linear-gradient(90deg, #f3f4f6 25%, #e9eaec 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 3px;
+}
+
+.fade-in  { animation: fadeIn  0.25s ease both; }
+.fade-up  { animation: fadeUp  0.3s  ease both; }
+.step-reveal { animation: stepReveal 0.3s ease both; }
