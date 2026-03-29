@@ -197,7 +197,7 @@ async function extractTextFromFile(file: File): Promise<string> {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      pages.push(content.items.map((item: { str?: string }) => item.str ?? '').join(' '));
+      pages.push(content.items.map((item: { str?: string; [key: string]: unknown }) => item.str ?? '').join(' '));
     }
     return pages.join('\n');
   }
