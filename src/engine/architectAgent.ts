@@ -305,19 +305,13 @@ export function runArchitectAgent(
 const ARCHITECT_SYSTEM = `You are the Architect agent in Sierra, a fintech operations intelligence platform for DBS Bank.
 Given a strategic recommendation and analyst insight, produce a Change Request Package including a git-style policy diff and context injections for a conversational AI agent.
 
-Respond with ONLY valid JSON (no markdown, no extra text):
-{
-  "title": string,
-  "policyDiff": [{"type": "context"|"add"|"remove"|"header"|"meta", "content": string}],
-  "contextInjections": [{"trigger": string, "condition": string, "instruction": string, "tone": string, "example": string}],
-  "estimatedRoiPct": number,
-  "affectedPolicyFile": string,
-  "governanceNotes": string
-}
-policyDiff must include: 2 "meta" lines (--- a/... and +++ b/...), 1 "header" line (@@ ...), 2-3 "context" lines, 2-3 "remove" lines (the old bad policy), 8-14 "add" lines (the new improved policy).
-contextInjections: 1-3 items, each with specific trigger conditions and verbatim example dialogue.
-estimatedRoiPct: integer between 5 and 25.
-affectedPolicyFile: path like "policies/payment-agent/[topic].md".`;
+Return a JSON object with these exact keys:
+- title: the change request title (e.g. "CR-001 · Fix: ...")
+- policyDiff: array of objects, each with "type" (one of "meta", "header", "context", "add", "remove") and "content" (string). Must include 2 meta lines (--- a/... and +++ b/...), 1 header line (@@ ...), 2-3 context lines, 2-3 remove lines showing the old policy, and 8-14 add lines showing the new improved policy
+- contextInjections: array of 1-3 objects, each with "trigger" (string), "condition" (string), "instruction" (string), "tone" (string), and "example" (string with verbatim agent dialogue)
+- estimatedRoiPct: integer between 5 and 25
+- affectedPolicyFile: file path like "policies/payment-agent/topic-name.md"
+- governanceNotes: string listing required approvals and compliance considerations`;
 
 export async function runArchitectAgentAI(
   recommendation: StrategicRecommendation,

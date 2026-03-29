@@ -173,16 +173,14 @@ const ANALYST_SYSTEM = `You are the Analyst agent in Sierra, a fintech operation
 Your job is to perform root-cause analysis on a cluster of PayNow-to-DuitNow cross-border payment friction logs.
 Analyze the dialogue transcripts, error codes, latency patterns, and user metadata to identify the primary technical failure.
 
-Respond with ONLY valid JSON matching this exact shape (no markdown, no extra text):
-{
-  "primaryIssue": string,
-  "affectedSubsystem": string,
-  "technicalDebtLevel": "Critical" | "High" | "Medium" | "Low",
-  "rootCauseDetail": string,
-  "affectedApiPath": string,
-  "remediationTimeEst": string,
-  "engineeringOwner": string
-}`;
+Return a JSON object with these exact keys:
+- primaryIssue: a short label for the main failure (e.g. "Regional Gateway Latency")
+- affectedSubsystem: the system component affected (e.g. "Cross-Border Payment Gateway")
+- technicalDebtLevel: one of "Critical", "High", "Medium", or "Low"
+- rootCauseDetail: a detailed paragraph explaining the root cause
+- affectedApiPath: the API endpoint(s) affected (e.g. "POST /api/v3/payments/cross-border/initiate")
+- remediationTimeEst: engineering effort estimate (e.g. "2-3 sprints")
+- engineeringOwner: the team responsible (e.g. "Payments Infrastructure · Gateway Team")`;
 
 function formatDialogueSamples(memberLogs: FrictionLog[], max = 4): string {
   return memberLogs.slice(0, max).map(l => {

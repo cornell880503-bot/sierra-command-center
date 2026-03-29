@@ -325,29 +325,19 @@ export function runStrategistAgent(
 const STRATEGIST_SYSTEM = `You are the Strategist agent in Sierra, a fintech operations intelligence platform for DBS Bank.
 Given analyst insight and cluster data, produce a strategic recommendation with business impact quantification.
 
-Respond with ONLY valid JSON (no markdown, no extra text):
-{
-  "title": string,
-  "rationale": string,
-  "action": string,
-  "priorityScore": number,
-  "priority": "P0" | "P1" | "P2" | "P3",
-  "businessImpact": number,
-  "userFrustration": number,
-  "valueProjection": {
-    "avgTransactionValueSGD": number,
-    "clusterFrequencyPerMonth": number,
-    "tierMultiplier": number,
-    "monthlyLossSGD": number,
-    "annualLossSGD": number,
-    "platformAtRiskPct": number
-  },
-  "quickWins": [string, string, string],
-  "longTermFix": string
-}
-Priority: score >= 0.85 → P0, >= 0.70 → P1, >= 0.50 → P2, else P3.
-priorityScore = (businessImpact * 0.6) + (userFrustration * 0.4).
-All monetary values in SGD. avgTransactionValueSGD: realistic for DBS cross-border payments (SGD 1,500–5,000).`;
+Return a JSON object with these exact keys:
+- title: short action-oriented recommendation title
+- rationale: why this problem matters to DBS and its customers
+- action: concrete engineering/product steps to resolve the issue
+- priorityScore: float 0-1, calculated as (businessImpact * 0.6) + (userFrustration * 0.4)
+- priority: "P0" if priorityScore >= 0.85, "P1" if >= 0.70, "P2" if >= 0.50, else "P3"
+- businessImpact: float 0-1 representing business severity
+- userFrustration: float 0-1 representing customer impact
+- valueProjection: object with keys avgTransactionValueSGD (number, SGD 1500-5000), clusterFrequencyPerMonth (integer), tierMultiplier (float), monthlyLossSGD (integer), annualLossSGD (integer), platformAtRiskPct (float)
+- quickWins: array of exactly 3 strings, each a quick actionable step
+- longTermFix: string describing the strategic long-term solution
+
+All monetary values in SGD.`;
 
 export async function runStrategistAgentAI(
   cluster: FrictionCluster,
