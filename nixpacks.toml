@@ -8,4 +8,4 @@ cmds = ["rm -f package-lock.json", "npm install"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "npx vite preview --host 0.0.0.0 --port $PORT"
+cmd = "sh -c 'npx vite preview --host 0.0.0.0 --port ${PORT:-3000}'"
