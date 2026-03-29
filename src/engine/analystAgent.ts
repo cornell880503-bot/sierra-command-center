@@ -171,9 +171,10 @@ export function runAnalystAgent(cluster: FrictionCluster, logs: FrictionLog[]): 
 // ─── AI-powered path (for imported logs) ─────────────────────────────────────
 const ANALYST_SYSTEM = `You are the Analyst agent in Sierra, a fintech operations intelligence platform for DBS Bank.
 Your job is to perform root-cause analysis on a cluster of PayNow-to-DuitNow cross-border payment friction logs.
-Analyze the dialogue transcripts, error codes, latency patterns, and user metadata to identify the primary technical failure.
+Analyze the error codes, latency patterns, tier data, and dialogue samples to identify the primary technical failure.
 
-Return a JSON object with these exact keys:
+Return a JSON object with exactly these keys:
+- reasoning: 2-3 sentences explaining your analysis logic before concluding
 - primaryIssue: a short label for the main failure (e.g. "Regional Gateway Latency")
 - affectedSubsystem: the system component affected (e.g. "Cross-Border Payment Gateway")
 - technicalDebtLevel: one of "Critical", "High", "Medium", or "Low"
@@ -182,11 +183,16 @@ Return a JSON object with these exact keys:
 - remediationTimeEst: engineering effort estimate (e.g. "2-3 sprints")
 - engineeringOwner: the team responsible (e.g. "Payments Infrastructure · Gateway Team")`;
 
-function formatDialogueSamples(memberLogs: FrictionLog[], max = 4): string {
+function formatDialogueSamples(memberLogs: FrictionLog[], max = 3): string {
+  // Limit to 3 logs, 2 turns each, 100 chars per turn — keeps total input under 3k chars
   return memberLogs.slice(0, max).map(l => {
-    const turns = l.dialogue.map(t => `${t.role === 'customer' ? 'Customer' : 'Agent'}: ${t.text}`).join('\n');
-    return `--- ${l.id} (HTTP ${l.systemContext.apiStatusCode}, ${l.systemContext.latencyMs}ms, ${l.userMetadata.tier}, retries:${l.systemContext.retryCount}, NPS:${l.userMetadata.nps}) ---\n${turns}`;
-  }).join('\n\n');
+    const turns = l.dialogue.slice(0, 2).map(t => {
+      const role = t.role === 'customer' ? 'C' : 'A';
+      const text = t.text.slice(0, 100);
+      return `${role}: ${text}`;
+    }).join(' | ');
+    return `[${l.id} HTTP:${l.systemContext.apiStatusCode} ${l.systemContext.latencyMs}ms ${l.userMetadata.tier} NPS:${l.userMetadata.nps}] ${turns}`;
+  }).join('\n');
 }
 
 export async function runAnalystAgentAI(cluster: FrictionCluster, logs: FrictionLog[]): Promise<AnalystAIResult> {

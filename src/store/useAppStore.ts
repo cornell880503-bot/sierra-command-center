@@ -27,6 +27,11 @@ export interface ImportResult {
   technicalDebtLevel: string;
   priority: string;
   geminiCalls: GeminiCallRecord[];
+  agentReasoning: {
+    analyst?: string;
+    strategist?: string;
+    architect?: string;
+  };
 }
 
 interface AppState {

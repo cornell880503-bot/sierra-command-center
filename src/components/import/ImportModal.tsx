@@ -432,9 +432,11 @@ Agent: I have flagged this as urgent, reference INC-9921. Update within 45 minut
                   {/* Gemini calls */}
                   <SectionLabel>Gemini API Calls</SectionLabel>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    {importResult.geminiCalls.map((call, i) => (
-                      <GeminiCallRow key={i} call={call} />
-                    ))}
+                    {importResult.geminiCalls.map((call, i) => {
+                      const reasoningKey = call.agent.toLowerCase() as 'analyst' | 'strategist' | 'architect';
+                      const reasoning = importResult.agentReasoning?.[reasoningKey];
+                      return <GeminiCallRow key={i} call={call} reasoning={reasoning} />;
+                    })}
                     {importResult.geminiCalls.length === 0 && (
                       <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: '#9ca3af', padding: '8px' }}>
                         No Gemini calls recorded — deterministic path used.
@@ -728,47 +730,66 @@ function LossDeltaPanel({ prev, next, isNew }: { prev: number; next: number; isN
   );
 }
 
-function GeminiCallRow({ call }: { call: import('../../store/useAppStore').GeminiCallRecord }) {
+function GeminiCallRow({ call, reasoning }: { call: import('../../store/useAppStore').GeminiCallRecord; reasoning?: string }) {
   const isFallback = call.status === 'fallback';
   const color = AGENT_COLOR[call.agent] ?? '#374151';
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: '10px',
-      padding: '8px 10px', borderRadius: '6px',
+      borderRadius: '6px',
       background: isFallback ? '#fafafa' : '#fafffe',
       border: `1px solid ${isFallback ? '#f3f4f6' : '#d1fae5'}`,
+      overflow: 'hidden',
     }}>
-      {/* Agent badge */}
-      <div style={{
-        fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700,
-        color, background: `${color}15`,
-        padding: '3px 8px', borderRadius: '4px', border: `1px solid ${color}30`,
-        minWidth: '68px', textAlign: 'center', flexShrink: 0,
-      }}>{call.agent}</div>
+      {/* Top row: badge + model + stats + dot */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px' }}>
+        {/* Agent badge */}
+        <div style={{
+          fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700,
+          color, background: `${color}15`,
+          padding: '3px 8px', borderRadius: '4px', border: `1px solid ${color}30`,
+          minWidth: '68px', textAlign: 'center', flexShrink: 0,
+        }}>{call.agent}</div>
 
-      {/* Model */}
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#6b7280', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {isFallback ? (
-          <span style={{ color: '#ca8a04' }}>⚠ fallback — deterministic result used</span>
-        ) : (
-          <span style={{ color: '#374151' }}>{call.model}</span>
+        {/* Model */}
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#6b7280', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {isFallback ? (
+            <span style={{ color: '#ca8a04' }}>⚠ fallback — deterministic result used</span>
+          ) : (
+            <span style={{ color: '#374151' }}>{call.model}</span>
+          )}
+        </div>
+
+        {/* Stats */}
+        {!isFallback && (
+          <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
+            <Stat label="in" value={`${(call.inputChars / 1000).toFixed(1)}k`} />
+            <Stat label="out" value={`${call.outputChars}c`} />
+            <Stat label="ms" value={String(call.tookMs)} color="#ca8a04" />
+          </div>
         )}
+
+        {/* Status dot */}
+        <div style={{
+          width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
+          background: isFallback ? '#ca8a04' : '#16a34a',
+        }} />
       </div>
 
-      {/* Stats */}
-      {!isFallback && (
-        <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
-          <Stat label="in" value={`${(call.inputChars / 1000).toFixed(1)}k`} />
-          <Stat label="out" value={`${call.outputChars}c`} />
-          <Stat label="ms" value={String(call.tookMs)} color="#ca8a04" />
+      {/* Reasoning row — only shown when AI succeeded and reasoning is available */}
+      {!isFallback && reasoning && (
+        <div style={{
+          padding: '6px 10px 8px 10px',
+          borderTop: `1px solid ${color}20`,
+          background: `${color}06`,
+        }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700, color, marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Reasoning
+          </div>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: '#374151', lineHeight: '1.5' }}>
+            {reasoning}
+          </div>
         </div>
       )}
-
-      {/* Status dot */}
-      <div style={{
-        width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
-        background: isFallback ? '#ca8a04' : '#16a34a',
-      }} />
     </div>
   );
 }

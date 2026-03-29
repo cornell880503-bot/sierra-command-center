@@ -190,6 +190,11 @@ export default function App() {
                 technicalDebtLevel: pipeline.insightCard.technicalDebtLevel,
                 priority: pipeline.recommendation.priority,
                 geminiCalls,
+                agentReasoning: {
+                  analyst: pipeline.insightCard.reasoning,
+                  strategist: pipeline.recommendation.reasoning,
+                  architect: cr.reasoning,
+                },
               };
               setImportResult(newLog.id, result);
             }

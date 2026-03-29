@@ -60,6 +60,7 @@ export interface InsightCard {
   affectedApiPath: string;
   remediationTimeEst: string;
   engineeringOwner: string;
+  reasoning?: string; // AI chain-of-thought (only present for AI-generated cards)
 }
 
 export interface ValueProjection {
@@ -83,6 +84,7 @@ export interface StrategicRecommendation {
   valueProjection: ValueProjection;
   quickWins: string[];
   longTermFix: string;
+  reasoning?: string; // AI chain-of-thought
 }
 
 export interface IntelligencePipeline {
@@ -117,6 +119,7 @@ export interface ChangeRequestPackage {
   affectedPolicyFile: string;
   governanceNotes: string;
   generatedAt: string;
+  reasoning?: string; // AI chain-of-thought
 }
 
 export type SyncPhase =

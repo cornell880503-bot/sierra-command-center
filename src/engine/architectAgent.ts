@@ -305,7 +305,8 @@ export function runArchitectAgent(
 const ARCHITECT_SYSTEM = `You are the Architect agent in Sierra, a fintech operations intelligence platform for DBS Bank.
 Given a strategic recommendation and analyst insight, produce a Change Request Package including a git-style policy diff and context injections for a conversational AI agent.
 
-Return a JSON object with these exact keys:
+Return a JSON object with exactly these keys:
+- reasoning: 2-3 sentences explaining your architectural decisions
 - title: the change request title (e.g. "CR-001 · Fix: ...")
 - policyDiff: array of objects, each with "type" (one of "meta", "header", "context", "add", "remove") and "content" (string). Must include 2 meta lines (--- a/... and +++ b/...), 1 header line (@@ ...), 2-3 context lines, 2-3 remove lines showing the old policy, and 8-14 add lines showing the new improved policy
 - contextInjections: array of 1-3 objects, each with "trigger" (string), "condition" (string), "instruction" (string), "tone" (string), and "example" (string with verbatim agent dialogue)
