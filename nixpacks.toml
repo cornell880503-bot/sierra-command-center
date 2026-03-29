@@ -7,5 +7,5 @@ cmds = ["rm -f package-lock.json", "npm install"]
 [phases.build]
 cmds = ["npm run build"]
 
-[staticAssets]
-path = "dist"
+[start]
+cmd = "npm run start"
