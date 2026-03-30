@@ -444,6 +444,33 @@ Agent: I have flagged this as urgent, reference INC-9921. Update within 45 minut
                     )}
                   </div>
 
+                  {/* Agent Reasoning — shown when at least one agent returned reasoning */}
+                  {importResult.agentReasoning && Object.values(importResult.agentReasoning).some(Boolean) && (
+                    <>
+                      <SectionLabel>Agent Reasoning</SectionLabel>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {(['analyst', 'strategist', 'architect'] as const).map(agent => {
+                          const text = importResult.agentReasoning[agent];
+                          if (!text) return null;
+                          const color = AGENT_COLOR[agent.charAt(0).toUpperCase() + agent.slice(1) as keyof typeof AGENT_COLOR] ?? '#374151';
+                          return (
+                            <div key={agent} style={{
+                              padding: '8px 10px', borderRadius: '6px',
+                              background: `${color}08`, border: `1px solid ${color}25`,
+                            }}>
+                              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700, color, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                {agent}
+                              </div>
+                              <div style={{ fontFamily: 'var(--font-sans)', fontSize: '11.5px', color: '#374151', lineHeight: '1.6' }}>
+                                {text}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
                   {/* Actions */}
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '4px' }}>
                     <ActionBtn onClick={reset} variant="ghost">Import Another</ActionBtn>

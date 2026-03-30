@@ -209,13 +209,13 @@ Tier Breakdown: Platinum ${platCount}, Gold ${goldCount}
 Log Count: ${memberLogs.length}
 Archetype Labels Present: ${archetypes}
 
-Sample Dialogue Transcripts (${Math.min(4, memberLogs.length)} of ${memberLogs.length}):
+Sample Dialogue Transcripts (${Math.min(3, memberLogs.length)} of ${memberLogs.length}):
 ${formatDialogueSamples(memberLogs)}
 
 Perform root-cause analysis and return JSON.`;
 
   try {
-    const { text, meta } = await callGemini(ANALYST_SYSTEM, userContent, 2048);
+    const { text, meta } = await callGemini(ANALYST_SYSTEM, userContent, 4096);
     const parsed = JSON.parse(extractJson(text)) as InsightCard;
     return { insightCard: { ...parsed, clusterId: cluster.id }, meta };
   } catch (err) {
