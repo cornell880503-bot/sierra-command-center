@@ -322,13 +322,19 @@ export async function runArchitectAgentAI(
   const crId = `CR-${String(crCounter).padStart(3, '0')}-${recommendation.clusterId}`;
 
   const userContent = `Cluster ID: ${recommendation.clusterId}
-Recommendation: ${JSON.stringify(recommendation)}
-InsightCard: ${JSON.stringify(insightCard)}
+Recommendation title: ${recommendation.title}
+Recommended action: ${recommendation.action}
+Priority: ${recommendation.priority} (score: ${recommendation.priorityScore})
+Primary issue: ${insightCard.primaryIssue}
+Affected subsystem: ${insightCard.affectedSubsystem}
+Technical debt: ${insightCard.technicalDebtLevel}
+Root cause: ${insightCard.rootCauseDetail}
+Affected API path: ${insightCard.affectedApiPath}
 
 Generate the Change Request Package JSON.`;
 
   try {
-    const { text, meta } = await callGemini(ARCHITECT_SYSTEM, userContent, 4096);
+    const { text, meta } = await callGemini(ARCHITECT_SYSTEM, userContent, 8192);
     const parsed = JSON.parse(extractJson(text)) as Omit<ChangeRequestPackage, 'clusterId' | 'id' | 'generatedAt'>;
     return {
       cr: { ...parsed, clusterId: recommendation.clusterId, id: crId, generatedAt: new Date().toISOString() },
