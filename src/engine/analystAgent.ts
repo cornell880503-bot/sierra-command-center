@@ -1,4 +1,4 @@
-import type { FrictionCluster, FrictionLog, InsightCard, TechnicalDebtLevel } from '../types';
+import type { FrictionCluster, FrictionLog, InsightCard, TechnicalDebtLevel, AppMode } from '../types';
 import { callGemini, extractJson } from '../lib/aiClient';
 import type { GeminiCallMeta } from '../lib/aiClient';
 
@@ -143,6 +143,91 @@ const FALLBACK_RCA: RcaTemplate = {
   engineeringOwner: 'Platform Engineering',
 };
 
+const RCA_MAP_RECOMMERCE: Record<string, RcaTemplate> = {
+  'Listing Rejected': {
+    primaryIssue: 'Policy Engine False-Positive Rejection',
+    affectedSubsystem: 'Listing Moderation API · Policy Enforcement Layer',
+    technicalDebtLevel: 'High',
+    rootCauseDetail: 'The listing policy engine is triggering false-positive rejections on valid listings due to overfitted keyword matching rules that flag common product terms as violations.',
+    affectedApiPath: 'POST /api/v3/listings/create · GET /api/v3/listings/validate',
+    remediationTimeEst: '2-3 sprints',
+    engineeringOwner: 'Trust & Safety Engineering · Listing Integrity Team',
+  },
+  'Photo Moderation': {
+    primaryIssue: 'CV Pipeline Queue Saturation',
+    affectedSubsystem: 'Computer Vision Pipeline · Image Compliance Service',
+    technicalDebtLevel: 'Critical',
+    rootCauseDetail: 'The image moderation CV pipeline has no SLA enforcement — queues saturate during peak upload periods, causing 48-72 hour moderation delays that kill listing momentum and seller trust.',
+    affectedApiPath: 'POST /api/v3/listings/photos · GET /api/v3/moderation/status',
+    remediationTimeEst: '3-4 sprints',
+    engineeringOwner: 'Computer Vision · Marketplace Safety Team',
+  },
+  'Price Sync Failure': {
+    primaryIssue: 'Listing Price Cache Staleness',
+    affectedSubsystem: 'Pricing Sync Service · Listing Display Layer',
+    technicalDebtLevel: 'High',
+    rootCauseDetail: 'Price updates are propagated asynchronously through a message queue that has no retry-on-failure logic. When the queue consumer falls behind, displayed prices become stale for hours, causing buyer confusion and lost conversions.',
+    affectedApiPath: 'PATCH /api/v3/listings/:id/price · GET /api/v3/listings/:id',
+    remediationTimeEst: '1-2 sprints',
+    engineeringOwner: 'Listing Infrastructure · Pricing Team',
+  },
+  'Boost Not Applied': {
+    primaryIssue: 'Boost Disbursement-Application Race Condition',
+    affectedSubsystem: 'Seller Boost Service · Listing Promotion Engine',
+    technicalDebtLevel: 'Critical',
+    rootCauseDetail: 'The boost payment confirmation and listing promotion application run as independent async jobs with no transactional coordination. If the promotion job fails silently, the payment is captured but the boost is never applied — no refund or retry is triggered.',
+    affectedApiPath: 'POST /api/v3/boosts/purchase · POST /api/v3/listings/:id/boost',
+    remediationTimeEst: '2 sprints',
+    engineeringOwner: 'Monetization Engineering · Seller Growth Team',
+  },
+  'Offer Ghosted': {
+    primaryIssue: 'Offer Notification Delivery Failure',
+    affectedSubsystem: 'Offer Notification Service · Push Delivery Layer',
+    technicalDebtLevel: 'High',
+    rootCauseDetail: 'Offer notifications are sent via a push service that has no delivery confirmation or fallback channel. When push tokens are stale or delivery fails, buyers receive no acknowledgment and sellers are never notified — the offer expires silently.',
+    affectedApiPath: 'POST /api/v3/offers/send · GET /api/v3/offers/:id/status',
+    remediationTimeEst: '2-3 sprints',
+    engineeringOwner: 'Notifications Platform · Buyer-Seller Engagement Team',
+  },
+  'Payout Delayed': {
+    primaryIssue: 'Disbursement Queue Deadlock',
+    affectedSubsystem: 'Seller Payout Service · Bank Disbursement Gateway',
+    technicalDebtLevel: 'Critical',
+    rootCauseDetail: 'Seller payout disbursements are batched and processed via a third-party banking gateway that has no SLA visibility. When the gateway experiences delays, payouts queue indefinitely with no seller notification and no automatic escalation trigger.',
+    affectedApiPath: 'POST /api/v3/payouts/initiate · GET /api/v3/payouts/:id/status',
+    remediationTimeEst: '3 sprints',
+    engineeringOwner: 'Financial Infrastructure · Seller Payments Team',
+  },
+  'Category Mismatch': {
+    primaryIssue: 'ML Categorization Model Drift',
+    affectedSubsystem: 'Item Classification Service · Category Taxonomy Engine',
+    technicalDebtLevel: 'Medium',
+    rootCauseDetail: 'The category prediction model has not been retrained since Q2. New product categories and seasonal item patterns are being misclassified, reducing discoverability and causing sellers to manually re-categorize listings multiple times.',
+    affectedApiPath: 'POST /api/v3/listings/categorize · PATCH /api/v3/listings/:id/category',
+    remediationTimeEst: '1 sprint',
+    engineeringOwner: 'ML Platform · Item Intelligence Team',
+  },
+  'Sold Item Dispute': {
+    primaryIssue: 'Resolution Queue SLA Breach',
+    affectedSubsystem: 'Dispute Resolution Service · Trust & Safety Ops Layer',
+    technicalDebtLevel: 'High',
+    rootCauseDetail: 'Sold item disputes are assigned to a shared ops queue with no priority weighting by seller tier or transaction value. High-value disputes from Power Sellers sit behind low-value cases for days, breaching resolution SLAs and creating churn risk.',
+    affectedApiPath: 'POST /api/v3/disputes/create · GET /api/v3/disputes/:id',
+    remediationTimeEst: '2 sprints',
+    engineeringOwner: 'Trust & Safety Engineering · Dispute Resolution Team',
+  },
+};
+
+const FALLBACK_RCA_RECOMMERCE: RcaTemplate = {
+  primaryIssue: 'Unclassified Marketplace Seller Friction',
+  affectedSubsystem: 'Marketplace Platform',
+  technicalDebtLevel: 'Medium',
+  rootCauseDetail: 'Cluster pattern does not map to a known archetype. Manual investigation required.',
+  affectedApiPath: '/api/v3/*',
+  remediationTimeEst: 'TBD',
+  engineeringOwner: 'Platform Engineering',
+};
+
 // ─── Dominant archetype detection ────────────────────────────────────────────
 function dominantArchetype(logs: FrictionLog[]): string {
   const counts: Record<string, number> = {};
@@ -151,10 +236,12 @@ function dominantArchetype(logs: FrictionLog[]): string {
 }
 
 // ─── Public API — deterministic path ─────────────────────────────────────────
-export function runAnalystAgent(cluster: FrictionCluster, logs: FrictionLog[]): InsightCard {
+export function runAnalystAgent(cluster: FrictionCluster, logs: FrictionLog[], mode: AppMode = 'FINTECH'): InsightCard {
   const memberLogs = logs.filter(l => cluster.logIds.includes(l.id));
   const archetype = dominantArchetype(memberLogs);
-  const rca = RCA_MAP[archetype] ?? FALLBACK_RCA;
+  const rcaMap = mode === 'RECOMMERCE' ? RCA_MAP_RECOMMERCE : RCA_MAP;
+  const fallback = mode === 'RECOMMERCE' ? FALLBACK_RCA_RECOMMERCE : FALLBACK_RCA;
+  const rca = rcaMap[archetype] ?? fallback;
 
   return {
     clusterId: cluster.id,
@@ -169,6 +256,20 @@ export function runAnalystAgent(cluster: FrictionCluster, logs: FrictionLog[]): 
 }
 
 // ─── AI-powered path (for imported logs) ─────────────────────────────────────
+const ANALYST_SYSTEM_RECOMMERCE = `You are the Analyst agent in Sierra, an AI governance platform for Carousell, Southeast Asia's leading recommerce marketplace.
+Your job is to perform root-cause analysis on a cluster of seller friction logs from the Carousell marketplace.
+Analyze the error codes, latency patterns, seller tier data (Power Seller / Individual), and dialogue samples to identify the primary technical or operational failure.
+
+Return a JSON object with exactly these keys:
+- reasoning: 2-3 sentences explaining your analysis logic before concluding
+- primaryIssue: a short label for the main failure (e.g. "CV Pipeline Queue Saturation")
+- affectedSubsystem: the system component affected (e.g. "Listing Moderation API")
+- technicalDebtLevel: one of "Critical", "High", "Medium", or "Low"
+- rootCauseDetail: a detailed paragraph explaining the root cause in marketplace/recommerce context
+- affectedApiPath: the API endpoint(s) affected (e.g. "POST /api/v3/listings/create")
+- remediationTimeEst: engineering effort estimate (e.g. "2-3 sprints")
+- engineeringOwner: the team responsible (e.g. "Trust & Safety Engineering · Listing Integrity Team")`;
+
 const ANALYST_SYSTEM = `You are the Analyst agent in Sierra, a fintech operations intelligence platform for DBS Bank.
 Your job is to perform root-cause analysis on a cluster of PayNow-to-DuitNow cross-border payment friction logs.
 Analyze the error codes, latency patterns, tier data, and dialogue samples to identify the primary technical failure.
@@ -195,17 +296,20 @@ function formatDialogueSamples(memberLogs: FrictionLog[], max = 3): string {
   }).join('\n');
 }
 
-export async function runAnalystAgentAI(cluster: FrictionCluster, logs: FrictionLog[]): Promise<AnalystAIResult> {
+export async function runAnalystAgentAI(cluster: FrictionCluster, logs: FrictionLog[], mode: AppMode = 'FINTECH'): Promise<AnalystAIResult> {
   const memberLogs = logs.filter(l => cluster.logIds.includes(l.id));
   const archetypes = [...new Set(memberLogs.map(l => l.archetype))].join(', ');
-  const platCount = memberLogs.filter(l => l.userMetadata.tier === 'Platinum').length;
-  const goldCount = memberLogs.filter(l => l.userMetadata.tier === 'Gold').length;
+  const topTierLabel = mode === 'FINTECH' ? 'Platinum' : 'Power Seller';
+  const lowerTierLabel = mode === 'FINTECH' ? 'Gold' : 'Individual';
+  const platCount = memberLogs.filter(l => l.userMetadata.tier === topTierLabel).length;
+  const goldCount = memberLogs.filter(l => l.userMetadata.tier === lowerTierLabel).length;
+  const systemPrompt = mode === 'RECOMMERCE' ? ANALYST_SYSTEM_RECOMMERCE : ANALYST_SYSTEM;
 
   const userContent = `Cluster ID: ${cluster.id}
 Dominant Error Code: ${cluster.dominantErrorCode}
 Average Latency: ${Math.round(cluster.avgLatencyMs)}ms
 Average Friction Score: ${cluster.avgFrictionScore.toFixed(3)}
-Tier Breakdown: Platinum ${platCount}, Gold ${goldCount}
+Tier Breakdown: ${topTierLabel} ${platCount}, ${lowerTierLabel} ${goldCount}
 Log Count: ${memberLogs.length}
 Archetype Labels Present: ${archetypes}
 
@@ -215,11 +319,11 @@ ${formatDialogueSamples(memberLogs)}
 Perform root-cause analysis and return JSON.`;
 
   try {
-    const { text, meta } = await callGemini(ANALYST_SYSTEM, userContent, 4096);
+    const { text, meta } = await callGemini(systemPrompt, userContent, 4096);
     const parsed = JSON.parse(extractJson(text)) as InsightCard;
     return { insightCard: { ...parsed, clusterId: cluster.id }, meta };
   } catch (err) {
     console.error('[Sierra Analyst] AI parse failed, using fallback:', err);
-    return { insightCard: runAnalystAgent(cluster, logs), meta: null };
+    return { insightCard: runAnalystAgent(cluster, logs, mode), meta: null };
   }
 }

@@ -3,6 +3,8 @@ import type {
   FrictionLog, FrictionCluster, IntelligencePipeline,
   ChangeRequestPackage, SyncState,
 } from '../types';
+import type { AppMode } from '../types';
+import { applyTheme } from '../lib/theme';
 
 export type AiPipelineStatus = 'idle' | 'loading' | 'done' | 'error';
 
@@ -35,6 +37,7 @@ export interface ImportResult {
 }
 
 interface AppState {
+  appMode: AppMode;
   logs: FrictionLog[];
   clusters: FrictionCluster[];
   pipelines: Record<string, IntelligencePipeline>;
@@ -52,6 +55,7 @@ interface AppState {
   aiPipelineStatus: Record<string, AiPipelineStatus>;
   importResults: Record<string, ImportResult>; // keyed by logId
 
+  setAppMode: (mode: AppMode) => void;
   setData: (logs: FrictionLog[], clusters: FrictionCluster[]) => void;
   setPipelines: (pipelines: Record<string, IntelligencePipeline>) => void;
   setChangeRequests: (crs: Record<string, ChangeRequestPackage>) => void;
@@ -71,6 +75,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  appMode: 'FINTECH',
   logs: [],
   clusters: [],
   pipelines: {},
@@ -87,6 +92,25 @@ export const useAppStore = create<AppState>((set) => ({
   aiPipelineStatus: {},
   importResults: {},
 
+  setAppMode: (mode) => {
+    applyTheme(mode);
+    set({
+      appMode: mode,
+      logs: [],
+      clusters: [],
+      pipelines: {},
+      changeRequests: {},
+      syncStates: {},
+      importedLogIds: new Set(),
+      aiPipelineStatus: {},
+      importResults: {},
+      selectedClusterId: null,
+      activeLogId: null,
+      drawerOpen: false,
+      activeArchitectClusterId: null,
+      thinkingClusterId: null,
+    });
+  },
   setData: (logs, clusters) => set({ logs, clusters }),
   setPipelines: (pipelines) => set({ pipelines }),
   setChangeRequests: (changeRequests) => set({ changeRequests }),

@@ -1,19 +1,5 @@
-import type { FrictionLog, ApiStatusCode, CustomerTier, DialogueTurn } from '../types';
-
-// Seeded PRNG (mulberry32) for deterministic output
-function mulberry32(seed: number) {
-  return function () {
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-
-const rng = mulberry32(0xDEADBEEF);
-const rand = () => rng();
-const randInt = (min: number, max: number) => Math.floor(rand() * (max - min + 1)) + min;
-const pick = <T>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
+import type { FrictionLog, ApiStatusCode, DialogueTurn } from '../types';
+import type { AppMode } from '../types';
 
 // ─── Archetype definitions ────────────────────────────────────────────────────
 type Archetype = {
@@ -22,7 +8,7 @@ type Archetype = {
   errorCodes: ApiStatusCode[];
   latencyRange: [number, number];
   retryRange: [number, number];
-  tiers: CustomerTier[];
+  tiers: string[];
   npsRange: [number, number];
 };
 
@@ -32,13 +18,23 @@ const ARCHETYPES: Archetype[] = [
   { name: 'Silent Drop',        count: 20, errorCodes: [408],      latencyRange: [5000, 9000],  retryRange: [3, 4], tiers: ['Platinum'],          npsRange: [-2, 0]  },
   { name: 'Partial Process',    count: 25, errorCodes: [500],      latencyRange: [3000, 7000],  retryRange: [1, 3], tiers: ['Platinum', 'Gold'],  npsRange: [-1, 1]  },
   { name: 'Network Flap',       count: 15, errorCodes: [503],      latencyRange: [800, 2500],   retryRange: [3, 4], tiers: ['Gold'],              npsRange: [-2, -1] },
-  // New archetypes
   { name: 'Duplicate Charge',   count: 10, errorCodes: [500, 408], latencyRange: [4000, 8000],  retryRange: [0, 1], tiers: ['Platinum'],          npsRange: [-2, -2] },
   { name: 'FX Rate Dispute',    count: 10, errorCodes: [402, 500], latencyRange: [1000, 3000],  retryRange: [0, 0], tiers: ['Gold', 'Platinum'],  npsRange: [-1, 0]  },
   { name: 'Wrong Recipient',    count: 10, errorCodes: [503, 500], latencyRange: [2000, 5000],  retryRange: [0, 2], tiers: ['Gold'],              npsRange: [-2, -2] },
 ];
 
-// ─── Dialogue pools ───────────────────────────────────────────────────────────
+const RECOMMERCE_ARCHETYPES: Archetype[] = [
+  { name: 'Listing Rejected',   count: 22, errorCodes: [402],       latencyRange: [800,  3000],  retryRange: [0,1], tiers: ['Power Seller','Individual'], npsRange: [-2,-1] },
+  { name: 'Photo Moderation',   count: 18, errorCodes: [408, 500],  latencyRange: [3000, 8000],  retryRange: [1,3], tiers: ['Individual'],               npsRange: [-2, 0] },
+  { name: 'Price Sync Failure', count: 20, errorCodes: [503],       latencyRange: [2000, 6000],  retryRange: [2,4], tiers: ['Power Seller'],             npsRange: [-1, 0] },
+  { name: 'Boost Not Applied',  count: 25, errorCodes: [500],       latencyRange: [1500, 5000],  retryRange: [1,2], tiers: ['Power Seller','Individual'], npsRange: [-1, 1] },
+  { name: 'Offer Ghosted',      count: 15, errorCodes: [408],       latencyRange: [5000, 9000],  retryRange: [3,4], tiers: ['Individual'],               npsRange: [-2,-1] },
+  { name: 'Payout Delayed',     count: 10, errorCodes: [504],       latencyRange: [6000,11000],  retryRange: [0,2], tiers: ['Power Seller'],             npsRange: [-2,-2] },
+  { name: 'Category Mismatch',  count: 10, errorCodes: [402],       latencyRange: [500,  2000],  retryRange: [0,0], tiers: ['Power Seller','Individual'], npsRange: [-1, 0] },
+  { name: 'Sold Item Dispute',  count: 10, errorCodes: [503],       latencyRange: [2000, 7000],  retryRange: [0,2], tiers: ['Power Seller'],             npsRange: [-2,-2] },
+];
+
+// ─── FINTECH Dialogue pools ───────────────────────────────────────────────────
 
 // ── Timeout Loop ──────────────────────────────────────────────────────────────
 const timeoutC1 = [
@@ -432,7 +428,379 @@ const wrongA4 = [
   "Recall reference RECALL-WR-0041. I'm sending a formal acknowledgment to your registered email right now. I truly wish I could give you a faster resolution — the cross-border recovery process is genuinely constrained by bilateral banking agreements.",
 ];
 
-// ─── Dialogue pool map ────────────────────────────────────────────────────────
+// ─── RECOMMERCE Dialogue pools ────────────────────────────────────────────────
+
+// ── Listing Rejected ──────────────────────────────────────────────────────────
+const listingRejC1 = [
+  "My iPhone 15 listing keeps getting rejected. I've verified all the details are correct.",
+  "I've tried submitting my listing three times today and it keeps getting rejected with no reason given.",
+  "My product listing was just rejected by your system. I'm a Power Seller with a clean record.",
+  "I submitted a new listing for a barely-used laptop and got an automated rejection. Why?",
+];
+const listingRejA1 = [
+  "I can see your listing was flagged by our policy engine. Let me check the specific reason.",
+  "Thank you for reaching out. I'll pull up the rejection details for your listing right now.",
+  "I'm sorry to hear that. Let me look into why your listing was flagged.",
+  "I understand how frustrating that must be. Can you share the listing ID so I can investigate?",
+];
+const listingRejC2 = [
+  "This is the second time this week. I'm losing buyers.",
+  "The listing ID is LST-88471. There's nothing wrong with the item — it's a standard consumer electronics listing.",
+  "My listing ID is LST-44221. I've sold hundreds of items and never had this issue before.",
+  "I have a 4.9 star rating and 500+ completed sales. Why is my listing being blocked?",
+];
+const listingRejA2 = [
+  "I can see the rejection was triggered by a keyword match in your listing title. The policy engine flagged a term that appears in our restricted list.",
+  "Looking at the rejection log, it appears to be a false positive — your listing doesn't appear to violate any actual policy.",
+  "The rejection reason code is KEYWORD_MATCH. This is often a false positive when certain common product terms are flagged by our automated system.",
+  "I can see your listing history — you have an excellent compliance record. This rejection appears to be an automated false positive.",
+];
+const listingRejC3 = [
+  "A keyword match? Which keyword? I need to know what to change.",
+  "So it's a false positive and I still have to wait? How long does this take to resolve?",
+  "This is costing me sales. Every hour my listing isn't live is lost revenue.",
+  "Can you manually approve it? You can see there's nothing wrong with the listing.",
+];
+const listingRejA3 = [
+  "I can see the flagged term. Unfortunately, I cannot override the policy engine from my end — this needs to go to our Trust & Safety team for manual review.",
+  "I understand the urgency. I'm flagging this as a false positive for priority review. For Power Sellers, our target review time is 2 hours.",
+  "I've escalated your listing for human review. You should receive a decision within 2-4 hours.",
+  "I'm submitting this for manual review right now. I've noted in the ticket that this appears to be a false positive given your seller history.",
+];
+const listingRejC4 = [
+  "2-4 hours is too long. Is there anything faster?",
+  "Fine. What's the ticket number? I'll be checking back.",
+  "Please escalate it. I'll wait but I'm not happy about this.",
+];
+const listingRejA4 = [
+  "I've raised ticket LS-REJ-8821 and marked it as high priority. I'm truly sorry for the inconvenience.",
+  "Ticket LS-REJ-4421 has been submitted. Our Trust & Safety team will review it within the next 2 hours.",
+  "Reference LS-REJ-0041. I've flagged this for our policy team as a potential false positive pattern that needs to be addressed.",
+];
+
+// ── Photo Moderation ──────────────────────────────────────────────────────────
+const photoC1 = [
+  "My listing photos have been stuck in moderation for 3 days.",
+  "I uploaded new photos to my listing 72 hours ago and they're still showing as 'under review'.",
+  "My product images haven't been approved yet. It's been 3 days since I submitted them.",
+  "Why is photo moderation taking so long? My listing is invisible without approved photos.",
+];
+const photoA1 = [
+  "Our CV pipeline is experiencing delays due to high volume.",
+  "I apologize for the wait. Our image moderation system is currently experiencing higher than normal queue times.",
+  "Thank you for reaching out. I can see your photos are in our moderation queue. We're currently processing a high volume of submissions.",
+  "I'm sorry about the delay. Our image review system is backed up at the moment.",
+];
+const photoC2 = [
+  "Three days is unacceptable. The item has already sold elsewhere.",
+  "I'm losing potential buyers every day this is delayed. When will it actually be reviewed?",
+  "I can't keep my listing live without approved photos. This is killing my sales.",
+  "Can you manually approve them? They're standard product photos — nothing remotely problematic.",
+];
+const photoA2 = [
+  "I understand your frustration. I can see your photos in the queue but I'm unable to manually approve them — that requires our CV review team.",
+  "I'm sorry about the impact on your sales. I can escalate your submission to the priority queue, which should reduce your wait to under 4 hours.",
+  "I can see the photos in our system. They look like standard product images. I'll flag them for expedited review.",
+  "I'm escalating your submission for priority review. Our target for the priority queue is 2 hours from now.",
+];
+const photoC3 = [
+  "4 hours? I've already waited 3 days.",
+  "Please do escalate it. And can you make sure this doesn't happen again for future uploads?",
+  "Thank you. What's the reference for this escalation?",
+];
+const photoA3 = [
+  "I completely understand your frustration and I sincerely apologize. I've submitted an urgent escalation — reference PM-8821.",
+  "I've added your submission to our priority queue. Reference PM-4421. I'm also flagging the 3-day delay as a system issue for our engineering team.",
+  "Escalation reference PM-0041 has been submitted. I've also noted this as a systemic issue — a 3-day moderation queue is not acceptable and I'm escalating the pattern to our ops team.",
+];
+const photoC4 = [
+  "Thank you. I'll be watching for the approval.",
+  "Please make sure this gets resolved today.",
+  "Fine. I'll wait for the approval notification.",
+];
+const photoA4 = [
+  "You'll receive a push notification as soon as your photos are approved. Again, I sincerely apologize for the 3-day wait.",
+  "You should hear back within 2-4 hours. I've put a note on your account to ensure faster processing on future uploads.",
+  "I'll personally monitor this ticket. If you don't receive approval within 4 hours, please reach out and I'll re-escalate immediately.",
+];
+
+// ── Price Sync Failure ────────────────────────────────────────────────────────
+const priceSyncC1 = [
+  "My listing still shows the old price even though I updated it 2 hours ago.",
+  "I changed my listing price an hour ago but buyers are still seeing the old price. This is causing confusion.",
+  "Price update not reflecting. I lowered the price 2 hours ago to match a sale and it's still showing the original price.",
+  "My listing price hasn't updated. I've refreshed multiple times and buyers are messaging me about the wrong price.",
+];
+const priceSyncA1 = [
+  "I can see there is a sync delay between our pricing service and the listing display layer.",
+  "I apologize for the confusion. We're experiencing a delay in our price synchronization system.",
+  "Thank you for flagging this. I can see your price update was received by our system but hasn't propagated to the listing display yet.",
+  "I'm sorry about the price display issue. This is a known delay in our pricing sync pipeline.",
+];
+const priceSyncC2 = [
+  "How long will this take? Buyers are messaging me at the old price.",
+  "I have a buyer waiting at the new price. This delay is making me look unreliable.",
+  "Can you force the update? This is urgent.",
+  "This is costing me a sale. What can I do?",
+];
+const priceSyncA2 = [
+  "Unfortunately, I cannot manually force a price sync — that requires a backend operation. The queue is currently running behind by approximately 3-4 hours.",
+  "I understand the urgency. The sync delay is a system-level issue I can't override directly. I'll escalate this to our technical team.",
+  "I can flag this for priority sync, but I can't guarantee a specific timeframe. Currently the lag is about 2-3 hours.",
+  "I've flagged your listing for priority price sync. I can't override the system directly, but this should move your update to the front of the queue.",
+];
+const priceSyncC3 = [
+  "3-4 hours is completely unacceptable for a price change. Competitors sync in seconds.",
+  "I need this fixed now. Can I just relist the item at the correct price?",
+  "This is terrible. Buyers are going to think I'm raising prices after they show interest.",
+];
+const priceSyncA3 = [
+  "I understand your frustration. Relisting would reset your item's activity metrics, which might affect its ranking. I'd recommend waiting for the sync to complete.",
+  "You're right that this needs to be much faster. I've escalated this as a priority issue to our infrastructure team. Ticket PS-8821.",
+  "I hear you. The sync delay is a known infrastructure issue that our engineering team is working to resolve. I've logged your case as additional evidence of the business impact.",
+];
+const priceSyncC4 = [
+  "Please fix this soon. My business depends on accurate pricing.",
+  "Fine. What's the ticket number?",
+  "I'll wait but please escalate this to someone who can fix the underlying issue.",
+];
+const priceSyncA4 = [
+  "Ticket PS-8821 has been raised with high priority. I've also added your feedback to our engineering team's queue. This sync delay should not be happening.",
+  "Reference PS-4421. I've flagged this for our infrastructure team as a business-critical issue. Price sync latency above 30 minutes is unacceptable.",
+  "PS-0041 has been submitted. I'll also ensure this is logged as part of our system improvement backlog. Thank you for your patience.",
+];
+
+// ── Boost Not Applied ─────────────────────────────────────────────────────────
+const boostC1 = [
+  "I paid for a 7-day boost yesterday but my listing has zero extra impressions.",
+  "I purchased a listing boost this morning and it's not working. My impressions are the same as before.",
+  "My paid boost isn't showing any effect. I spent $15 on this and it's been 24 hours with nothing.",
+  "I bought a boost for my listing and the stats haven't changed at all. Did the boost even get applied?",
+];
+const boostA1 = [
+  "I can confirm the boost payment was processed but the application to your listing failed.",
+  "I'm sorry to hear that. Let me check the boost status on your listing.",
+  "Thank you for reaching out. I can see a boost purchase was made. Let me verify if it was properly applied.",
+  "I apologize for the issue. I'm pulling up your boost transaction now to investigate.",
+];
+const boostC2 = [
+  "So I paid for something that didn't work? What's the refund process?",
+  "This is unacceptable. I'm paying for a service that wasn't delivered.",
+  "I want a full refund immediately. The boost clearly didn't activate.",
+  "Can you apply the boost now, or do I need to repurchase?",
+];
+const boostA2 = [
+  "You're absolutely right to request a refund. I can see the payment was captured but the application failed. I'll initiate a refund now.",
+  "I apologize for this. The boost system appears to have a payment-application disconnect. I'm escalating this for an immediate refund.",
+  "This is definitely our error. The payment succeeded but the boost wasn't activated. I'm flagging this for our Monetization team to process a refund.",
+  "I can see the boost payment but the listing shows no active promotion. I'll raise a refund request and also try to re-apply the boost.",
+];
+const boostC3 = [
+  "How long will the refund take?",
+  "Thank you. But can you also ensure the boost is applied if I repurchase?",
+  "And will this be compensated somehow? I lost a day of visibility.",
+];
+const boostA3 = [
+  "The refund should appear within 3-5 business days. I've also submitted a request to re-apply the boost at no charge as compensation for the failure.",
+  "Refund ticket BNA-8821 has been raised. The refund typically processes within 3-5 business days. I'm also offering a complimentary boost extension as compensation.",
+  "I understand. I've submitted the refund request under BNA-4421. For the lost day, I'll request a complimentary 24-hour boost extension.",
+];
+const boostC4 = [
+  "Thank you. Please make sure the refund actually goes through.",
+  "Fine. What's the reference number?",
+  "I appreciate that. Please make sure the boost failure is investigated so it doesn't happen again.",
+];
+const boostA4 = [
+  "Reference BNA-8821. You'll receive a confirmation email once the refund is processed. I've also flagged this boost failure pattern for our engineering team.",
+  "Ticket BNA-4421 is raised. I genuinely apologize for the experience — a paid feature that silently fails is completely unacceptable, and I've escalated it to our Monetization Engineering team.",
+  "Reference BNA-0041. Refund is submitted. I'm also logging this as a systemic issue — silent boost application failures need to be caught by our monitoring systems.",
+];
+
+// ── Offer Ghosted ─────────────────────────────────────────────────────────────
+const offerC1 = [
+  "I sent an offer 24 hours ago and the seller hasn't responded. I can't even see if they saw it.",
+  "I made an offer on a listing yesterday and there's been zero response. The seller seems to have ghosted.",
+  "My offer to a seller hasn't been responded to in over a day. Is there any way to know if they received it?",
+  "I submitted an offer 30 hours ago and nothing. Did the seller even get my offer?",
+];
+const offerA1 = [
+  "I can see the offer notification failed to deliver to the seller's device.",
+  "I'm sorry about that. Let me check the delivery status of your offer notification.",
+  "Thank you for reaching out. I can look into whether your offer notification was successfully delivered.",
+  "I understand how frustrating that is. Let me check the offer delivery status.",
+];
+const offerC2 = [
+  "So the seller never even knew I made an offer? That's a platform failure.",
+  "The offer expired this morning. Now I can't even submit a new offer at the same price.",
+  "If they didn't receive the notification, how do I get them to respond?",
+  "I was ready to buy. This has been a complete waste of time.",
+];
+const offerA2 = [
+  "You're right — the notification failed to deliver, which means the seller had no idea you made an offer. I'm resending the notification now.",
+  "I can see the push notification failed. I'm sending the offer notification via email as a fallback right now.",
+  "I'm sorry — this is a platform failure. I've resent the notification and I'm also extending your offer expiry by 48 hours.",
+  "I apologize. The delivery failure is entirely on our side. I've resent the notification and your offer has been extended automatically.",
+];
+const offerC3 = [
+  "Thanks for resending. Will they definitely get it now?",
+  "If they still don't respond, what are my options?",
+  "How do I know if this happens again on a future offer?",
+];
+const offerA3 = [
+  "I've sent via both push and email, so yes — the seller should receive this shortly. Your offer has also been extended by 48 hours.",
+  "If the seller doesn't respond within 48 hours, your offer will expire and you'll be able to submit a new one or contact the seller directly via chat.",
+  "I've logged this as a notification failure for our team. We're working on improving delivery confirmation visibility for buyers.",
+];
+const offerC4 = [
+  "Thank you. I hope the seller responds this time.",
+  "Fine. I'll wait for the 48 hours.",
+  "Please make sure this gets fixed. Losing offers to notification failures is a real problem.",
+];
+const offerA4 = [
+  "You'll receive a notification as soon as the seller responds. I'm sorry for the original delivery failure.",
+  "Noted. I've logged this as a delivery failure case OG-8821. Our team will investigate why the original push notification failed.",
+  "Reference OG-4421. I've submitted this to our Notifications Platform team — silent offer delivery failures directly impact buyer conversion and it needs to be fixed.",
+];
+
+// ── Payout Delayed ────────────────────────────────────────────────────────────
+const payoutC1 = [
+  "My payout from a sale 5 days ago still hasn't arrived.",
+  "I completed a sale 5 days ago and the payout hasn't hit my bank account yet.",
+  "Where is my payout? The buyer confirmed delivery 5 days ago and I still have nothing.",
+  "My seller payout is overdue. It's been 5 business days since the sale was completed.",
+];
+const payoutA1 = [
+  "I can see your payout is stuck in our disbursement queue due to a bank verification delay.",
+  "I apologize for the delay. Let me check the status of your payout.",
+  "Thank you for reaching out. I can look into your payout status right now.",
+  "I'm sorry about this. Let me pull up your payout details.",
+];
+const payoutC2 = [
+  "Why does bank verification take 5 days? This is my money.",
+  "I need this money. Can you expedite it?",
+  "What does 'bank verification delay' even mean? My bank details haven't changed.",
+  "I'm a Power Seller. Is there any priority processing for situations like this?",
+];
+const payoutA2 = [
+  "I understand the urgency. The verification delay is on our banking partner's side — it's outside our direct control, but I'm flagging this as an overdue case.",
+  "Your payout is in our disbursement queue but hasn't been released by our banking partner yet. I'm escalating this to our Finance team.",
+  "I can see the payout is stuck at the bank verification stage. For Power Sellers, we have a 24-hour resolution SLA that should have been triggered. I'm escalating this now.",
+  "This should not have taken 5 days. I'm raising this to our Finance team as a priority case.",
+];
+const payoutC3 = [
+  "5 days and no one proactively told me there was an issue. That's unacceptable.",
+  "Please escalate this. I can't operate my business without timely payouts.",
+  "What's the realistic timeline for resolution now?",
+];
+const payoutA3 = [
+  "You're right — you should have been proactively notified about this delay. I'm raising a formal complaint about the lack of communication alongside the payout escalation.",
+  "I completely agree — 5 days without proactive communication is unacceptable. I've escalated to our Finance team with P1 priority.",
+  "As a Power Seller, you have a 24-hour SLA from this point. I've triggered that escalation now. Reference PD-8821.",
+];
+const payoutC4 = [
+  "Fine. What's the reference number?",
+  "Please follow up on this personally if you can.",
+  "Thank you. I need this resolved by tomorrow.",
+];
+const payoutA4 = [
+  "Reference PD-8821. Our Finance team will contact you within 24 hours with a resolution. I'm truly sorry for the delay and the lack of communication.",
+  "PD-4421 has been raised at P1 priority. You'll receive a status update within 24 hours. I've also flagged the proactive notification failure for our product team.",
+  "Ticket PD-0041 is submitted. Given the 5-day delay, I'm requesting our Finance team to also review whether any compensation is appropriate for the disruption to your business.",
+];
+
+// ── Category Mismatch ─────────────────────────────────────────────────────────
+const categoryC1 = [
+  "My furniture listing keeps going to Electronics category automatically.",
+  "Every time I list my sofa, it gets auto-categorized as Electronics. This is clearly wrong.",
+  "My home decor items are being listed under the wrong category. It's affecting my search visibility.",
+  "The auto-categorization is broken. My dining table listing keeps appearing in Tech & Accessories.",
+];
+const categoryA1 = [
+  "Our categorization model appears to have misclassified your item based on keywords.",
+  "I apologize for the incorrect categorization. Our ML model sometimes misclassifies items.",
+  "Thank you for flagging this. I can see your listing was auto-categorized incorrectly.",
+  "I'm sorry about the category error. Our automated classification system has misidentified your item.",
+];
+const categoryC2 = [
+  "Can I just change it manually? And will it stay changed?",
+  "This is the third time this has happened with different furniture listings.",
+  "The wrong category means buyers searching for furniture won't find my listing. I'm losing visibility.",
+  "How do I fix this without it reverting back?",
+];
+const categoryA2 = [
+  "Yes, you can manually override the category in your listing edit. The override should persist unless you significantly edit the listing title.",
+  "I can override the category from my end right now. I'll also flag this as a model error for retraining.",
+  "I'm correcting the category to Furniture & Living right now. I've also flagged this as a false positive for our ML team.",
+  "I'll update the category for you now. I'm also submitting this as training feedback for our categorization model.",
+];
+const categoryC3 = [
+  "Thank you. But why does it keep happening? Can it be fixed permanently?",
+  "Please fix it. And flag this pattern — other sellers probably have the same issue.",
+  "Thank you. How long until the category model is retrained?",
+];
+const categoryA3 = [
+  "The underlying model needs to be retrained with updated data. I've submitted your case as a feedback example. Model updates typically happen quarterly.",
+  "I've flagged this for our ML Platform team. Category model retraining is on their roadmap. I can't give you a specific date, but your feedback helps prioritize it.",
+  "I'm logging this as part of a broader category mismatch pattern. Our ML team will use these examples for the next model update.",
+];
+const categoryC4 = [
+  "Thank you. Please make sure it's fixed.",
+  "Fine. As long as it stays in the right category now.",
+  "I appreciate the help. Just please get the model fixed.",
+];
+const categoryA4 = [
+  "Category has been updated. Reference CM-8821 has been submitted to our ML team as a model improvement request.",
+  "Done. CM-4421 has been raised. Your listing is now correctly categorized under Furniture & Living.",
+  "Category corrected. Ticket CM-0041 submitted to our Item Intelligence team for model retraining inclusion.",
+];
+
+// ── Sold Item Dispute ─────────────────────────────────────────────────────────
+const disputeC1 = [
+  "The buyer claims the item I sold is not as described, but it was exactly as listed.",
+  "A buyer has opened a dispute saying the item wasn't as described. I listed it accurately with photos.",
+  "I have a dispute filed against me but the item was in the exact condition I described.",
+  "Someone opened a dispute on my sale claiming the item is different from the listing. It's not — I have photos.",
+];
+const disputeA1 = [
+  "I can see the dispute was filed 2 days ago. Our resolution team will review.",
+  "I'm sorry to hear this. Let me check the dispute details.",
+  "Thank you for reaching out about this. I can pull up the dispute record.",
+  "I understand this is stressful. Let me look at the dispute filed against your listing.",
+];
+const disputeC2 = [
+  "2 days and nothing has happened. When will it be resolved?",
+  "My funds are on hold until this is resolved. This is affecting my cash flow.",
+  "I have clear listing photos and a detailed description. How long does this review take?",
+  "I'm a Power Seller with 500+ positive reviews. Surely this should be resolved quickly.",
+];
+const disputeA2 = [
+  "I can see your dispute is in our standard review queue. The current average resolution time is 5-7 business days.",
+  "I understand the cash flow impact. Your dispute is in our general queue — for Power Sellers, we have a priority lane, but it wasn't automatically applied here.",
+  "I can see your listing details. I'll flag this for expedited review given your seller history.",
+  "I'm escalating this to our priority dispute queue given your Power Seller status. This should reduce resolution to 24-48 hours.",
+];
+const disputeC3 = [
+  "5-7 days is way too long when my funds are frozen.",
+  "It wasn't automatically prioritized? Why not? I'm a Power Seller.",
+  "Thank you for escalating. What happens next?",
+];
+const disputeA3 = [
+  "I agree — frozen funds during a lengthy dispute is a real business impact. I'm moving this to our priority queue now. Reference SD-8821.",
+  "I apologize that it wasn't auto-prioritized. I'm fixing that now and escalating to our P1 dispute queue.",
+  "The resolution team will review your evidence within 24-48 hours and contact both parties. You'll receive a notification when a decision is made.",
+];
+const disputeC4 = [
+  "Thank you. Please make sure the review is fair.",
+  "Fine. Reference number please.",
+  "I appreciate the escalation. I have all the original listing photos as evidence.",
+];
+const disputeA4 = [
+  "Reference SD-8821. The review team will have access to all listing data, photos, and communication history. Given your seller record, I'm confident this will be resolved fairly.",
+  "SD-4421 has been escalated. Please ensure your listing photos and any buyer communication is accessible in the dispute panel — our team will review all evidence.",
+  "Ticket SD-0041 is raised with priority. I've noted your Power Seller status and clean history in the escalation. You'll hear back within 24-48 hours.",
+];
+
+// ─── Dialogue pool maps ───────────────────────────────────────────────────────
 type DialoguePool = {
   c1: string[]; a1: string[];
   c2: string[]; a2: string[];
@@ -451,6 +819,17 @@ const POOLS: Record<string, DialoguePool> = {
   'Wrong Recipient':  { c1: wrongC1,   a1: wrongA1,   c2: wrongC2,   a2: wrongA2,   c3: wrongC3,   a3: wrongA3,   c4: wrongC4,   a4: wrongA4   },
 };
 
+const RECOMMERCE_POOLS: Record<string, DialoguePool> = {
+  'Listing Rejected':   { c1: listingRejC1,  a1: listingRejA1,  c2: listingRejC2,  a2: listingRejA2,  c3: listingRejC3,  a3: listingRejA3,  c4: listingRejC4,  a4: listingRejA4  },
+  'Photo Moderation':   { c1: photoC1,       a1: photoA1,       c2: photoC2,       a2: photoA2,       c3: photoC3,       a3: photoA3,       c4: photoC4,       a4: photoA4       },
+  'Price Sync Failure': { c1: priceSyncC1,   a1: priceSyncA1,   c2: priceSyncC2,   a2: priceSyncA2,   c3: priceSyncC3,   a3: priceSyncA3,   c4: priceSyncC4,   a4: priceSyncA4   },
+  'Boost Not Applied':  { c1: boostC1,       a1: boostA1,       c2: boostC2,       a2: boostA2,       c3: boostC3,       a3: boostA3,       c4: boostC4,       a4: boostA4       },
+  'Offer Ghosted':      { c1: offerC1,       a1: offerA1,       c2: offerC2,       a2: offerA2,       c3: offerC3,       a3: offerA3,       c4: offerC4,       a4: offerA4       },
+  'Payout Delayed':     { c1: payoutC1,      a1: payoutA1,      c2: payoutC2,      a2: payoutA2,      c3: payoutC3,      a3: payoutA3,      c4: payoutC4,      a4: payoutA4      },
+  'Category Mismatch':  { c1: categoryC1,    a1: categoryA1,    c2: categoryC2,    a2: categoryA2,    c3: categoryC3,    a3: categoryA3,    c4: categoryC4,    a4: categoryA4    },
+  'Sold Item Dispute':  { c1: disputeC1,     a1: disputeA1,     c2: disputeC2,     a2: disputeA2,     c3: disputeC3,     a3: disputeA3,     c4: disputeC4,     a4: disputeA4     },
+};
+
 // ─── Error severity map ───────────────────────────────────────────────────────
 const errorSeverity: Record<number, number> = { 402: 0.5, 408: 0.6, 500: 0.7, 503: 0.8, 504: 1.0 };
 
@@ -462,23 +841,41 @@ function computeFrictionScore(latencyMs: number, retryCount: number, statusCode:
   return Math.min(latencyNorm * 0.35 + retryNorm * 0.25 + severity * 0.25 + npsNeg * 0.15, 1);
 }
 
-function generateSessionId(): string {
-  const hex = () => Math.floor(rand() * 0xFFFF).toString(16).padStart(4, '0');
-  return `${hex()}-${hex()}-${hex()}-${hex()}`;
-}
+export function generateLogs(mode: AppMode = 'FINTECH'): FrictionLog[] {
+  // ── Internalized PRNG — resets per call ──────────────────────────────────────
+  function mulberry32(seed: number) {
+    return function () {
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
 
-function generateTimestamp(): string {
-  const base = new Date('2024-03-29T08:00:00Z').getTime();
-  const offset = Math.floor(rand() * 86400000);
-  return new Date(base + offset).toISOString();
-}
+  const rng = mulberry32(0xDEADBEEF);
+  const rand = () => rng();
+  const randInt = (min: number, max: number) => Math.floor(rand() * (max - min + 1)) + min;
+  const pick = <T>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
 
-export function generateLogs(): FrictionLog[] {
+  function generateSessionId(): string {
+    const hex = () => Math.floor(rand() * 0xFFFF).toString(16).padStart(4, '0');
+    return `${hex()}-${hex()}-${hex()}-${hex()}`;
+  }
+
+  function generateTimestamp(): string {
+    const base = new Date('2024-03-29T08:00:00Z').getTime();
+    const offset = Math.floor(rand() * 86400000);
+    return new Date(base + offset).toISOString();
+  }
+
+  const archetypes = mode === 'RECOMMERCE' ? RECOMMERCE_ARCHETYPES : ARCHETYPES;
+  const pools = mode === 'RECOMMERCE' ? RECOMMERCE_POOLS : POOLS;
+
   const logs: FrictionLog[] = [];
   let idx = 1;
 
-  for (const archetype of ARCHETYPES) {
-    const pool = POOLS[archetype.name] ?? POOLS['Timeout Loop'];
+  for (const archetype of archetypes) {
+    const pool = pools[archetype.name] ?? (mode === 'RECOMMERCE' ? RECOMMERCE_POOLS['Listing Rejected'] : POOLS['Timeout Loop']);
 
     for (let i = 0; i < archetype.count; i++) {
       const tier = pick(archetype.tiers);
@@ -486,8 +883,11 @@ export function generateLogs(): FrictionLog[] {
       const latencyMs = randInt(...archetype.latencyRange);
       const retryCount = randInt(...archetype.retryRange);
       const nps = randInt(...archetype.npsRange);
-      const tenureMonths = tier === 'Platinum' ? randInt(36, 120) : randInt(6, 60);
-      const creditScore = tier === 'Platinum' ? randInt(700, 820) : randInt(580, 750);
+      const tenureMonths = (mode === 'FINTECH')
+        ? (tier === 'Platinum' ? randInt(36, 120) : randInt(6, 60))
+        : randInt(1, 48);
+      // For RECOMMERCE: sellerRating as scaled creditScore (1-5 stars → 300-850)
+      const creditScore = Math.round(300 + rand() * 550);
 
       const dialogue: DialogueTurn[] = [
         { role: 'customer', text: pick(pool.c1) },

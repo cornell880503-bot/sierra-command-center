@@ -1,4 +1,5 @@
 import { useAppStore } from '../../store/useAppStore';
+import { THEMES } from '../../lib/theme';
 import { ImportModal } from '../import/ImportModal';
 
 export function Header() {
@@ -6,6 +7,8 @@ export function Header() {
   const clusters = useAppStore(s => s.clusters);
   const pipelines = useAppStore(s => s.pipelines);
   const syncStates = useAppStore(s => s.syncStates);
+  const appMode = useAppStore(s => s.appMode);
+  const setAppMode = useAppStore(s => s.setAppMode);
 
   const setImportModalOpen = useAppStore(s => s.setImportModalOpen);
   const importedLogIds = useAppStore(s => s.importedLogIds);
@@ -13,6 +16,8 @@ export function Header() {
     .filter(p => p.recommendation.priority === 'P0').length;
   const deployedCount = Object.values(syncStates)
     .filter(s => s.phase === 'success').length;
+
+  const theme = THEMES[appMode];
 
   return (
     <>
@@ -33,9 +38,9 @@ export function Header() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
           <div style={{
             width: '22px', height: '22px', borderRadius: '6px',
-            background: 'linear-gradient(135deg, #00a86b 0%, #005c3b 100%)',
+            background: theme.logoGradient,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 1px 3px rgba(0,168,107,0.3)',
+            boxShadow: `0 1px 3px ${theme.accent}4d`,
           }}>
             <span style={{
               fontFamily: 'var(--font-sans)', fontSize: '10px',
@@ -57,6 +62,23 @@ export function Header() {
           Strategy Command Center
         </span>
 
+        {/* Mode toggle */}
+        <div style={{ display: 'flex', borderRadius: '6px', border: '1px solid #e5e7eb', overflow: 'hidden', marginRight: '8px' }}>
+          {(['FINTECH', 'RECOMMERCE'] as const).map(m => (
+            <button key={m} onClick={() => setAppMode(m)} style={{
+              padding: '4px 10px',
+              fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700,
+              border: 'none', cursor: 'pointer',
+              background: appMode === m ? THEMES[m].accent : 'transparent',
+              color: appMode === m ? '#ffffff' : '#9ca3af',
+              transition: 'background 0.15s, color 0.15s',
+              letterSpacing: '0.04em',
+            }}>
+              {m === 'FINTECH' ? 'FinTech' : 'Recommerce'}
+            </button>
+          ))}
+        </div>
+
         <div style={{
           background: '#f9fafb', border: '1px solid #e5e7eb',
           borderRadius: '20px', padding: '3px 10px',
@@ -65,10 +87,10 @@ export function Header() {
         }}>
           <div style={{
             width: '5px', height: '5px', borderRadius: '50%',
-            background: '#00a86b',
+            background: theme.accent,
             animation: 'liveBlip 1.8s ease-in-out infinite',
           }} />
-          DBS FinTech · PayNow ⇄ DuitNow
+          {theme.contextLabel}
         </div>
       </div>
 
@@ -80,24 +102,22 @@ export function Header() {
             display: 'flex', alignItems: 'center', gap: '5px',
             padding: '4px 12px', borderRadius: '6px', cursor: 'pointer',
             fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600,
-            background: '#f0fdf4', color: '#166534',
-            border: '1px solid #bbf7d0',
+            background: theme.accentLight, color: theme.accentDark,
+            border: `1px solid ${theme.accentBorder}`,
             transition: 'all 0.12s',
             marginRight: '6px',
           }}
           onMouseOver={e => {
-            (e.currentTarget as HTMLElement).style.background = '#dcfce7';
-            (e.currentTarget as HTMLElement).style.borderColor = '#86efac';
+            (e.currentTarget as HTMLElement).style.background = theme.accentBorder;
           }}
           onMouseOut={e => {
-            (e.currentTarget as HTMLElement).style.background = '#f0fdf4';
-            (e.currentTarget as HTMLElement).style.borderColor = '#bbf7d0';
+            (e.currentTarget as HTMLElement).style.background = theme.accentLight;
           }}
         >
           + Import
           {importedLogIds.size > 0 && (
             <span style={{
-              background: '#00a86b', color: '#fff', borderRadius: '10px',
+              background: theme.accent, color: '#fff', borderRadius: '10px',
               padding: '0 5px', fontSize: '9px', fontWeight: 700,
             }}>{importedLogIds.size}</span>
           )}
@@ -113,11 +133,11 @@ export function Header() {
             <Sep />
             <div style={{
               display: 'flex', alignItems: 'center', gap: '5px',
-              background: '#f0fdf4', border: '1px solid #bbf7d0',
+              background: theme.accentLight, border: `1px solid ${theme.accentBorder}`,
               borderRadius: '20px', padding: '3px 10px',
             }}>
               <span style={{ fontSize: '10px' }}>✓</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#166534', fontWeight: 600 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: theme.accentDark, fontWeight: 600 }}>
                 {deployedCount} deployed
               </span>
             </div>
@@ -143,14 +163,14 @@ export function Header() {
         <Sep />
         <div style={{
           display: 'flex', alignItems: 'center', gap: '5px',
-          background: '#f0fdf4', border: '1px solid #bbf7d0',
+          background: theme.accentLight, border: `1px solid ${theme.accentBorder}`,
           borderRadius: '20px', padding: '3px 10px',
         }}>
           <div style={{
             width: '5px', height: '5px', borderRadius: '50%',
-            background: '#00a86b', animation: 'liveBlip 1.5s ease-in-out infinite',
+            background: theme.accent, animation: 'liveBlip 1.5s ease-in-out infinite',
           }} />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#166534' }}>live</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: theme.accentDark }}>live</span>
         </div>
       </div>
     </header>

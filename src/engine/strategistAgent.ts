@@ -5,6 +5,7 @@ import type {
   StrategicRecommendation,
   ValueProjection,
   Priority,
+  AppMode,
 } from '../types';
 import { callGemini, extractJson } from '../lib/aiClient';
 import type { GeminiCallMeta } from '../lib/aiClient';
@@ -243,6 +244,100 @@ const FALLBACK_RECO: RecoTemplate = {
   baseFrustration: 0.5,
 };
 
+// ─── RECOMMERCE transaction value estimates ───────────────────────────────────
+const AVG_TXN_VALUE_RECOMMERCE: Record<string, number> = {
+  'Listing Rejected':   85,
+  'Photo Moderation':   120,
+  'Price Sync Failure': 95,
+  'Boost Not Applied':  200,
+  'Offer Ghosted':      110,
+  'Payout Delayed':     150,
+  'Category Mismatch':  75,
+  'Sold Item Dispute':  180,
+};
+
+const TIER_MULTIPLIER_RECOMMERCE: Record<string, number> = {
+  'Power Seller': 2.2,
+  'Individual':   1.0,
+};
+
+const RECO_MAP_RECOMMERCE: Record<string, RecoTemplate> = {
+  'Listing Rejected': {
+    title: 'Deploy Listing Pre-Validation API with Explainable Rejection Reasons',
+    rationale: 'Silent policy rejections are the single largest source of Power Seller churn. Every rejected listing represents lost GMV and erodes platform trust.',
+    action: 'Build a pre-validation endpoint that sellers can call before submission. Return structured rejection reasons with specific fix suggestions. Add a self-service appeal flow for borderline cases.',
+    quickWins: ['Add rejection reason codes to current API response (immediate)', 'Email sellers with fix suggestions when listing is rejected', 'Create "Listing Health" dashboard in seller portal'],
+    longTermFix: 'Migrate to an ML-based policy engine with continuous seller feedback loops, reducing false-positive rate below 2%.',
+    baseBizImpact: 0.82, baseFrustration: 0.78,
+  },
+  'Photo Moderation': {
+    title: 'Implement Priority Lane CV Moderation with SLA Enforcement',
+    rationale: 'A 48-72 hour photo moderation queue kills listing momentum — 70% of buyer interest occurs in the first 24 hours after a listing goes live.',
+    action: 'Introduce a priority moderation lane for Power Sellers with a 2-hour SLA. Add auto-approval for sellers with >95% historical compliance. Deploy queue depth monitoring with automatic capacity scaling.',
+    quickWins: ['Set 4-hour SLA for Power Seller photo moderation (ops change)', 'Add moderation status push notifications to seller app', 'Auto-approve photos from sellers with clean 90-day history'],
+    longTermFix: 'Build real-time edge-based CV screening that approves 80% of photos instantly at upload, reserving the queue only for edge cases.',
+    baseBizImpact: 0.88, baseFrustration: 0.84,
+  },
+  'Price Sync Failure': {
+    title: 'Replace Async Price Queue with Synchronous Write-Through Cache',
+    rationale: 'Stale prices cause buyer confusion and abandoned transactions. Sellers updating prices to compete in real-time are undercut by display lag.',
+    action: 'Replace the async price propagation queue with a synchronous write-through to the listing display cache. Add optimistic UI in the seller app showing confirmed vs pending price states.',
+    quickWins: ['Add "Price update pending" indicator in seller app (1 sprint)', 'Reduce queue consumer polling interval from 5 min to 30 sec (config change)', 'Alert ops team when price sync lag exceeds 30 minutes'],
+    longTermFix: 'Event-driven listing state architecture where all listing mutations are atomic and immediately consistent across all display surfaces.',
+    baseBizImpact: 0.72, baseFrustration: 0.68,
+  },
+  'Boost Not Applied': {
+    title: 'Implement Saga Pattern for Boost Purchase-Application Atomicity',
+    rationale: 'Sellers paying for boosts that silently fail destroys trust and monetization. Every failed boost is both a direct revenue refund liability and a churn trigger.',
+    action: 'Wrap boost purchase and application in a Saga orchestration pattern. If application fails, trigger automatic refund and notify seller within 5 minutes. Add idempotency keys to prevent double-charging.',
+    quickWins: ['Add boost application status to seller app with retry button (immediate)', 'Daily audit job to detect paid-but-not-applied boosts and auto-refund', 'PagerDuty alert when boost failure rate exceeds 1%'],
+    longTermFix: 'Transactional boost system where payment and application are atomic — charge only occurs after listing confirmation of boost activation.',
+    baseBizImpact: 0.95, baseFrustration: 0.92,
+  },
+  'Offer Ghosted': {
+    title: 'Add Multi-Channel Offer Notification with Delivery Confirmation',
+    rationale: 'Every ghosted offer represents a buyer who was willing to transact. Re-engaging them after a failed notification window is nearly impossible.',
+    action: 'Add SMS and email fallback channels for offer notifications when push delivery fails. Implement delivery receipts so buyers know if their offer was seen. Add offer expiry extension if notification was not delivered.',
+    quickWins: ['Add email fallback for offer notifications (1 sprint)', 'Show "Offer delivered/not yet seen" status to buyer', 'Auto-extend offer expiry by 24h if notification undelivered'],
+    longTermFix: 'Real-time bidirectional messaging for offer negotiation, replacing the current async notification-poll model entirely.',
+    baseBizImpact: 0.78, baseFrustration: 0.85,
+  },
+  'Payout Delayed': {
+    title: 'Implement Real-Time Payout Status Tracking with Automatic Escalation',
+    rationale: 'Delayed payouts are the highest-severity trust failure for sellers. A seller who does not know where their money is will churn to a competitor platform.',
+    action: 'Integrate real-time disbursement status webhooks from the banking gateway. Push status updates to sellers at each processing stage. Trigger automatic customer support escalation if payout exceeds SLA by 25%.',
+    quickWins: ['Add payout status page with real-time updates in seller portal', 'SMS notification when payout is initiated and when it arrives', 'Daily payout SLA breach report for ops team'],
+    longTermFix: 'Instant payout capability for Power Sellers using platform float, with batch settlement to banking partners in the background.',
+    baseBizImpact: 0.92, baseFrustration: 0.96,
+  },
+  'Category Mismatch': {
+    title: 'Retrain Category Model and Add Seller-Override Self-Service',
+    rationale: 'Misclassified listings receive 60% less organic search traffic. Sellers who cannot fix their category lose discoverability and attribution.',
+    action: 'Retrain the category model on Q4 inventory data. Add a "Suggest Category Override" feature for sellers with a fast-track review queue. Show category confidence score to sellers at listing time.',
+    quickWins: ['Enable seller category override in listing edit (1 sprint)', 'Show "Category: X (auto-detected)" with edit link in listing preview', 'Quarterly model retraining schedule with performance benchmarks'],
+    longTermFix: 'Hybrid categorization system combining ML prediction with seller-provided signals and buyer search behavior to continuously self-correct.',
+    baseBizImpact: 0.62, baseFrustration: 0.58,
+  },
+  'Sold Item Dispute': {
+    title: 'Introduce Tiered Dispute Resolution with Power Seller Priority Queue',
+    rationale: 'Unresolved disputes destroy seller confidence and expose the platform to regulatory risk. Power Sellers with high GMV require faster resolution SLAs.',
+    action: 'Segment the dispute queue by seller tier and transaction value. Power Sellers get a 24-hour resolution SLA with a dedicated ops agent. Add an AI-assisted evidence review to pre-triage clear-cut cases.',
+    quickWins: ['Create Power Seller priority queue in ops tooling (ops config change)', 'Add dispute status tracking page visible to both buyer and seller', 'Auto-close disputes where evidence is one-sided after 48 hours'],
+    longTermFix: 'AI-native dispute resolution that handles 80% of cases automatically using listing data, communication history, and transaction records.',
+    baseBizImpact: 0.75, baseFrustration: 0.88,
+  },
+};
+
+const FALLBACK_RECO_RECOMMERCE: RecoTemplate = {
+  title: 'Conduct Manual Root Cause Investigation',
+  rationale: 'Unclassified seller friction pattern requires manual engineering triage.',
+  action: 'Assign a senior engineer to review raw logs and identify the root cause.',
+  quickWins: ['Schedule triage session with marketplace engineering team'],
+  longTermFix: 'Define archetype pattern and add to Observer Agent clustering model.',
+  baseBizImpact: 0.5,
+  baseFrustration: 0.5,
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function dominantArchetype(logs: FrictionLog[]): string {
   const counts: Record<string, number> = {};
@@ -250,12 +345,15 @@ function dominantArchetype(logs: FrictionLog[]): string {
   return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
 }
 
-function effectiveTierMultiplier(cluster: FrictionCluster): number {
+function effectiveTierMultiplier(cluster: FrictionCluster, mode: AppMode = 'FINTECH'): number {
   const total = cluster.tierBreakdown.Platinum + cluster.tierBreakdown.Gold;
   if (total === 0) return 1.0;
-  const platFrac = cluster.tierBreakdown.Platinum / total;
-  const goldFrac = cluster.tierBreakdown.Gold / total;
-  return platFrac * TIER_MULTIPLIER.Platinum + goldFrac * TIER_MULTIPLIER.Gold;
+  const topFrac = cluster.tierBreakdown.Platinum / total;
+  const lowerFrac = cluster.tierBreakdown.Gold / total;
+  if (mode === 'RECOMMERCE') {
+    return topFrac * TIER_MULTIPLIER_RECOMMERCE['Power Seller'] + lowerFrac * TIER_MULTIPLIER_RECOMMERCE['Individual'];
+  }
+  return topFrac * TIER_MULTIPLIER.Platinum + lowerFrac * TIER_MULTIPLIER.Gold;
 }
 
 function computePriority(score: number): Priority {
@@ -270,15 +368,19 @@ export function runStrategistAgent(
   cluster: FrictionCluster,
   logs: FrictionLog[],
   insightCard: InsightCard,
+  mode: AppMode = 'FINTECH',
 ): StrategicRecommendation {
   const memberLogs = logs.filter(l => cluster.logIds.includes(l.id));
   const archetype = dominantArchetype(memberLogs);
-  const reco = RECO_MAP[archetype] ?? FALLBACK_RECO;
+  const recoMap = mode === 'RECOMMERCE' ? RECO_MAP_RECOMMERCE : RECO_MAP;
+  const fallback = mode === 'RECOMMERCE' ? FALLBACK_RECO_RECOMMERCE : FALLBACK_RECO;
+  const reco = recoMap[archetype] ?? fallback;
 
   // Value Projection Engine
-  const avgTxnValue = AVG_TXN_VALUE[archetype] ?? DEFAULT_TXN_VALUE;
+  const txnValueMap = mode === 'RECOMMERCE' ? AVG_TXN_VALUE_RECOMMERCE : AVG_TXN_VALUE;
+  const avgTxnValue = txnValueMap[archetype] ?? DEFAULT_TXN_VALUE;
   const clusterFreqPerMonth = Math.round(cluster.logIds.length * 4.3); // weekly → monthly
-  const tierMult = effectiveTierMultiplier(cluster);
+  const tierMult = effectiveTierMultiplier(cluster, mode);
   const monthlyLoss = avgTxnValue * clusterFreqPerMonth * tierMult;
   const annualLoss = monthlyLoss * 12;
 
@@ -322,6 +424,24 @@ export function runStrategistAgent(
 }
 
 // ─── AI-powered path ──────────────────────────────────────────────────────────
+const STRATEGIST_SYSTEM_RECOMMERCE = `You are the Strategist agent in Sierra, an AI governance platform for Carousell recommerce marketplace.
+Given analyst insight and cluster data, produce a strategic recommendation with GMV impact quantification.
+
+Return a JSON object with exactly these keys:
+- reasoning: 2-3 sentences explaining your strategic thinking before concluding
+- title: short action-oriented recommendation title
+- rationale: why this seller friction problem matters to Carousell GMV and seller retention
+- action: concrete engineering/product steps to resolve the issue
+- priorityScore: float 0-1, calculated as (businessImpact * 0.6) + (userFrustration * 0.4)
+- priority: "P0" if priorityScore >= 0.85, "P1" if >= 0.70, "P2" if >= 0.50, else "P3"
+- businessImpact: float 0-1 representing GMV and revenue severity
+- userFrustration: float 0-1 representing seller/buyer frustration
+- valueProjection: object with keys avgTransactionValueSGD (number, avg listing value USD 50-300), clusterFrequencyPerMonth (integer), tierMultiplier (float), monthlyLossSGD (integer, represents monthly GMV at risk in USD), annualLossSGD (integer, annual GMV at risk), platformAtRiskPct (float)
+- quickWins: array of exactly 3 strings
+- longTermFix: string
+
+Use marketplace/recommerce terminology: "GMV", "listing conversion", "seller tier", "Power Seller", "buyer engagement".`;
+
 const STRATEGIST_SYSTEM = `You are the Strategist agent in Sierra, a fintech operations intelligence platform for DBS Bank.
 Given analyst insight and cluster data, produce a strategic recommendation with business impact quantification.
 
@@ -344,11 +464,15 @@ export async function runStrategistAgentAI(
   cluster: FrictionCluster,
   logs: FrictionLog[],
   insightCard: InsightCard,
+  mode: AppMode = 'FINTECH',
 ): Promise<StrategistAIResult> {
   const memberLogs = logs.filter(l => cluster.logIds.includes(l.id));
   const avgNps = (memberLogs.reduce((s, l) => s + l.userMetadata.nps, 0) / memberLogs.length).toFixed(2);
-  const platCount = memberLogs.filter(l => l.userMetadata.tier === 'Platinum').length;
-  const goldCount = memberLogs.filter(l => l.userMetadata.tier === 'Gold').length;
+  const topTierLabel = mode === 'FINTECH' ? 'Platinum' : 'Power Seller';
+  const lowerTierLabel = mode === 'FINTECH' ? 'Gold' : 'Individual';
+  const platCount = memberLogs.filter(l => l.userMetadata.tier === topTierLabel).length;
+  const goldCount = memberLogs.filter(l => l.userMetadata.tier === lowerTierLabel).length;
+  const systemPrompt = mode === 'RECOMMERCE' ? STRATEGIST_SYSTEM_RECOMMERCE : STRATEGIST_SYSTEM;
 
   const userContent = `Cluster ID: ${cluster.id}
 Analyst Insight: ${JSON.stringify(insightCard)}
@@ -356,7 +480,7 @@ Analyst Insight: ${JSON.stringify(insightCard)}
 Cluster Stats:
   Log count: ${memberLogs.length}
   Avg friction: ${cluster.avgFrictionScore.toFixed(3)}
-  Tier: Platinum ${platCount}, Gold ${goldCount}
+  Tier: ${topTierLabel} ${platCount}, ${lowerTierLabel} ${goldCount}
   Avg latency: ${Math.round(cluster.avgLatencyMs)}ms
   Business frequency: ${(cluster.businessFrequency * 100).toFixed(1)}% of total traffic
   Avg NPS: ${avgNps}
@@ -365,11 +489,11 @@ Cluster Stats:
 Produce the strategic recommendation JSON.`;
 
   try {
-    const { text, meta } = await callGemini(STRATEGIST_SYSTEM, userContent, 4096);
+    const { text, meta } = await callGemini(systemPrompt, userContent, 4096);
     const parsed = JSON.parse(extractJson(text)) as StrategicRecommendation;
     return { recommendation: { ...parsed, clusterId: cluster.id }, meta };
   } catch (err) {
     console.error('[Sierra Strategist] AI parse failed, using fallback:', err);
-    return { recommendation: runStrategistAgent(cluster, logs, insightCard), meta: null };
+    return { recommendation: runStrategistAgent(cluster, logs, insightCard, mode), meta: null };
   }
 }

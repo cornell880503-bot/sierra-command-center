@@ -1,9 +1,11 @@
+export type AppMode = 'FINTECH' | 'RECOMMERCE';
+
 export type CustomerTier = 'Platinum' | 'Gold';
 
 export type ApiStatusCode = 402 | 408 | 500 | 503 | 504;
 
 export interface UserMetadata {
-  tier: CustomerTier;
+  tier: string;
   tenureMonths: number;
   creditScore: number;
   nps: number; // -2 to 2

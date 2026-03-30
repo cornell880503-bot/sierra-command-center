@@ -1,9 +1,13 @@
 import { useAppStore } from '../../store/useAppStore';
+import { THEMES } from '../../lib/theme';
 
 export function ImpactBanner() {
   const pipelines = useAppStore(s => s.pipelines);
   const changeRequests = useAppStore(s => s.changeRequests);
   const clusters = useAppStore(s => s.clusters);
+  const appMode = useAppStore(s => s.appMode);
+
+  const theme = THEMES[appMode];
 
   const pipelineList = Object.values(pipelines);
   if (pipelineList.length === 0) return null;
@@ -23,10 +27,12 @@ export function ImpactBanner() {
   const deployedCount = Object.values(useAppStore.getState().syncStates)
     .filter(s => s.phase === 'success').length;
 
-  const fmtSGD = (n: number) =>
-    n >= 1_000_000
-      ? `SGD ${(n / 1_000_000).toFixed(2)}M`
-      : `SGD ${n.toLocaleString()}`;
+  const fmtCurrency = (n: number) => {
+    const sym = theme.currencySymbol;
+    return n >= 1_000_000
+      ? `${sym}${(n / 1_000_000).toFixed(2)}M`
+      : `${sym}${n.toLocaleString()}`;
+  };
 
   return (
     <div style={{
@@ -45,14 +51,14 @@ export function ImpactBanner() {
           color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.1em',
           marginBottom: '2px',
         }}>
-          Total Strategic Impact
+          {theme.impactLabel}
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
           <span style={{
             fontFamily: 'var(--font-mono)', fontSize: '18px',
             fontWeight: 700, color: '#dc2626', lineHeight: 1,
           }}>
-            {fmtSGD(totalMonthly)}
+            {fmtCurrency(totalMonthly)}
           </span>
           <span style={{
             fontFamily: 'var(--font-mono)', fontSize: '11px',
@@ -66,7 +72,7 @@ export function ImpactBanner() {
       <div style={{ width: '1px', height: '32px', background: '#f3f4f6', margin: '0 20px' }} />
 
       {/* Annual */}
-      <Metric label="Annual Exposure" value={fmtSGD(totalAnnual)} color="#dc2626" />
+      <Metric label="Annual Exposure" value={fmtCurrency(totalAnnual)} color="#dc2626" />
       <Sep />
       <Metric label="Clusters Identified" value={String(clusters.length)} color="#111827" />
       <Sep />
@@ -74,20 +80,20 @@ export function ImpactBanner() {
       <Sep />
       <Metric label="High Priority" value={String(p1Count)} color={p1Count > 0 ? '#f97316' : '#9ca3af'} />
       <Sep />
-      <Metric label="Est. Avg ROI" value={`+${avgRoi}%`} color="#00a86b" sub="if all CRs deployed" />
+      <Metric label="Est. Avg ROI" value={`+${avgRoi}%`} color={theme.accent} sub="if all CRs deployed" />
 
       {/* Right: deployed count / call to action */}
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
         {deployedCount > 0 && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: '6px',
-            background: '#f0fdf4', border: '1px solid #bbf7d0',
+            background: theme.accentLight, border: `1px solid ${theme.accentBorder}`,
             borderRadius: '20px', padding: '4px 12px',
           }}>
             <span style={{ fontSize: '11px' }}>✓</span>
             <span style={{
               fontFamily: 'var(--font-mono)', fontSize: '10px',
-              color: '#166534', fontWeight: 600,
+              color: theme.accentDark, fontWeight: 600,
             }}>
               {deployedCount}/{clusters.length} CRs deployed
             </span>

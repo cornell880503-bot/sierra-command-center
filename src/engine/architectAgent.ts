@@ -1,6 +1,7 @@
 import type {
   StrategicRecommendation, InsightCard,
   ChangeRequestPackage, PolicyDiffLine, ContextInjection,
+  AppMode,
 } from '../types';
 import { callGemini, extractJson } from '../lib/aiClient';
 import type { GeminiCallMeta } from '../lib/aiClient';
@@ -263,6 +264,160 @@ const ARCH_TEMPLATES: Record<string, ArchTemplate> = {
   },
 };
 
+const ARCH_TEMPLATES_RECOMMERCE: Record<string, ArchTemplate> = {
+  'Boost Not Applied': {
+    crTitle: 'CR-R001 · Boost Saga: Atomic Purchase-Application with Auto-Refund',
+    policyFile: 'policies/seller-agent/boost-handling.md',
+    diff: [
+      { type: 'meta',    content: '--- a/policies/seller-agent/boost-handling.md' },
+      { type: 'meta',    content: '+++ b/policies/seller-agent/boost-handling.md' },
+      { type: 'header',  content: '@@ -8,6 +8,26 @@ ## Boost Purchase Handling' },
+      { type: 'context', content: ' ## Boost Purchase Handling' },
+      { type: 'context', content: ' ' },
+      { type: 'remove',  content: '-If a seller reports their boost is not showing, ask them to wait 24 hours.' },
+      { type: 'remove',  content: '-If still not applied after 24 hours, escalate to ops team manually.' },
+      { type: 'add',     content: '+### Boost Application Failure Protocol' },
+      { type: 'add',     content: '+' },
+      { type: 'add',     content: '+When a seller reports a paid boost that is not applied to their listing:' },
+      { type: 'add',     content: '+' },
+      { type: 'add',     content: '+1. Check boost status: GET /api/v3/boosts/:id/status' },
+      { type: 'add',     content: '+2. If status is PAYMENT_CAPTURED but APPLICATION_FAILED:' },
+      { type: 'add',     content: '+   - Initiate immediate auto-refund via POST /api/v3/refunds/initiate' },
+      { type: 'add',     content: '+   - Notify seller: "Your boost payment has been refunded automatically."' },
+      { type: 'add',     content: '+   - Offer a complimentary retry boost of equal value' },
+      { type: 'add',     content: '+3. If status is PENDING > 2 hours: escalate to Monetization Engineering' },
+      { type: 'add',     content: '+4. NEVER tell a seller to "wait and see" for a paid feature failure.' },
+      { type: 'add',     content: '+5. Log all boost failures under category: BOOST-APPLY-FAIL' },
+      { type: 'context', content: ' ' },
+      { type: 'context', content: ' ### Escalation Thresholds' },
+    ],
+    injections: [
+      {
+        trigger: 'Seller reports paid boost not showing increased impressions',
+        condition: 'systemContext.apiStatusCode === 500 AND listing has active boost payment',
+        instruction: 'Acknowledge the payment immediately. Do not ask the seller to wait. Verify boost status via API and trigger refund if application failed. Offer a complimentary boost.',
+        tone: 'Accountable and solution-forward. A seller paying for a feature that silently fails is a trust-breaking moment — own it.',
+        example: '"I can confirm your boost payment was received. I can also see the boost was not applied to your listing — this is our error. I\'ve initiated an automatic refund and will apply a complimentary boost within the next 30 minutes."',
+      },
+    ],
+    roiPct: 19,
+    governanceNotes: 'Requires: Monetization Engineering sign-off, Finance approval for auto-refund policy, Legal review of "complimentary boost" liability.',
+  },
+  'Payout Delayed': {
+    crTitle: 'CR-R002 · Payout Transparency: Real-Time Disbursement Status + Escalation SLA',
+    policyFile: 'policies/seller-agent/payout-handling.md',
+    diff: [
+      { type: 'meta',    content: '--- a/policies/seller-agent/payout-handling.md' },
+      { type: 'meta',    content: '+++ b/policies/seller-agent/payout-handling.md' },
+      { type: 'header',  content: '@@ -5,6 +5,27 @@ ## Seller Payout Handling' },
+      { type: 'context', content: ' ## Seller Payout Handling' },
+      { type: 'context', content: ' ' },
+      { type: 'remove',  content: '-For payout delays, tell sellers to wait 5-7 business days.' },
+      { type: 'remove',  content: '-If still pending, create a support ticket for the finance team.' },
+      { type: 'add',     content: '+### Payout Delay Response Protocol' },
+      { type: 'add',     content: '+' },
+      { type: 'add',     content: '+When a seller reports a payout delay exceeding 3 business days:' },
+      { type: 'add',     content: '+' },
+      { type: 'add',     content: '+1. Pull real-time payout status: GET /api/v3/payouts/:id/status' },
+      { type: 'add',     content: '+2. If status shows BANK_VERIFICATION_PENDING > 48h: auto-escalate to Finance' },
+      { type: 'add',     content: '+3. Communicate exact status to seller: "Your payout is at [STAGE]."' },
+      { type: 'add',     content: '+4. For Power Sellers: 24-hour resolution SLA. Assign dedicated case owner.' },
+      { type: 'add',     content: '+5. NEVER say "please wait" without providing a specific resolution date.' },
+      { type: 'add',     content: '+6. Log delay under: PAYOUT-DELAY-[BANK_CODE] for infrastructure tracking' },
+      { type: 'add',     content: '+' },
+      { type: 'add',     content: '+**Power Seller escalation matrix:**' },
+      { type: 'add',     content: '+| Delay       | Action                          |' },
+      { type: 'add',     content: '+|-------------|--------------------------------|' },
+      { type: 'add',     content: '+| > 3 days    | Proactive status push + case owner assigned |' },
+      { type: 'add',     content: '+| > 5 days    | Finance team escalation + seller compensation review |' },
+      { type: 'context', content: ' ' },
+      { type: 'context', content: ' ### Bank Partner SLA Matrix' },
+    ],
+    injections: [
+      {
+        trigger: 'Power Seller reports payout not received after sale completed',
+        condition: 'systemContext.apiStatusCode === 504 AND seller tier === Power Seller',
+        instruction: 'Lead with a specific status update, not a vague timeline. Pull the actual payout record, tell the seller exactly what stage it is at and the expected resolution date.',
+        tone: 'Precise and ownership-taking. "I can confirm" language, not "I believe" or "it should be".',
+        example: '"I can confirm your payout of $[amount] from [sale date] is currently at the bank verification stage — reference [PAYOUT-ID]. For Power Sellers, our SLA is 24 hours from this point. I\'ve flagged your case to our Finance team and will personally follow up by [time] tomorrow."',
+      },
+    ],
+    roiPct: 22,
+    governanceNotes: 'Requires: Finance team sign-off on 24h Power Seller SLA, Legal review of compensation language, Banking partner notification for SLA benchmarking.',
+  },
+  'Offer Ghosted': {
+    crTitle: 'CR-R003 · Offer Delivery: Multi-Channel Notification with Buyer Visibility',
+    policyFile: 'policies/seller-agent/offer-handling.md',
+    diff: [
+      { type: 'meta',    content: '--- a/policies/seller-agent/offer-handling.md' },
+      { type: 'meta',    content: '+++ b/policies/seller-agent/offer-handling.md' },
+      { type: 'header',  content: '@@ -3,5 +3,23 @@ ## Offer Notification Handling' },
+      { type: 'context', content: ' ## Offer Notification Handling' },
+      { type: 'context', content: ' ' },
+      { type: 'remove',  content: '-If buyer reports seller did not respond to offer, advise buyer to message seller directly.' },
+      { type: 'add',     content: '+### Offer Notification Failure Protocol' },
+      { type: 'add',     content: '+' },
+      { type: 'add',     content: '+When a buyer reports their offer was ignored or not seen by the seller:' },
+      { type: 'add',     content: '+' },
+      { type: 'add',     content: '+1. Check notification delivery status: GET /api/v3/offers/:id/delivery' },
+      { type: 'add',     content: '+2. If delivery_status === FAILED: resend via email fallback immediately' },
+      { type: 'add',     content: '+3. Tell buyer: "We can confirm your offer was [delivered/not yet delivered]."' },
+      { type: 'add',     content: '+4. If offer was not delivered: extend offer expiry by 48 hours automatically' },
+      { type: 'add',     content: '+5. NEVER advise buyers to "message the seller directly" for system failures.' },
+      { type: 'add',     content: '+6. Log under: OFFER-NOTIF-FAIL-[CHANNEL] for notification team tracking' },
+      { type: 'context', content: ' ' },
+      { type: 'context', content: ' ### Escalation Thresholds' },
+    ],
+    injections: [
+      {
+        trigger: 'Buyer reports no response from seller after sending offer',
+        condition: 'offer delivery_status === FAILED OR offer age > 24h with no seller action',
+        instruction: 'Check notification delivery before blaming seller inaction. If notification failed, resend immediately and extend offer. Give buyer a definitive status.',
+        tone: 'Empowering for the buyer. Make them feel their offer is being actively advocated for, not dismissed.',
+        example: '"I can see your offer was sent but our notification system failed to deliver it to the seller. I\'ve resent the notification now and extended your offer by 48 hours so the seller has time to respond. You\'ll receive a confirmation once they\'ve seen it."',
+      },
+    ],
+    roiPct: 15,
+    governanceNotes: 'Requires: Notifications Platform sign-off, Product approval for offer expiry extension policy, Legal review of buyer communication commitments.',
+  },
+  'Listing Rejected': {
+    crTitle: 'CR-R004 · Listing Policy: Explainable Rejections + Self-Service Appeal Flow',
+    policyFile: 'policies/seller-agent/listing-rejection.md',
+    diff: [
+      { type: 'meta',    content: '--- a/policies/seller-agent/listing-rejection.md' },
+      { type: 'meta',    content: '+++ b/policies/seller-agent/listing-rejection.md' },
+      { type: 'header',  content: '@@ -4,5 +4,22 @@ ## Listing Rejection Handling' },
+      { type: 'context', content: ' ## Listing Rejection Handling' },
+      { type: 'context', content: ' ' },
+      { type: 'remove',  content: '-When a listing is rejected, inform the seller to review our community guidelines.' },
+      { type: 'remove',  content: '-Direct them to the help center for more information.' },
+      { type: 'add',     content: '+### Listing Rejection — Explainable Response Protocol' },
+      { type: 'add',     content: '+' },
+      { type: 'add',     content: '+When a seller contacts regarding a rejected listing:' },
+      { type: 'add',     content: '+' },
+      { type: 'add',     content: '+1. Pull rejection reason code: GET /api/v3/listings/:id/rejection-reason' },
+      { type: 'add',     content: '+2. Provide the SPECIFIC reason, not a generic policy link' },
+      { type: 'add',     content: '+3. Give actionable fix instructions: "Change [specific field] from [X] to [Y]"' },
+      { type: 'add',     content: '+4. For Power Sellers: offer fast-track human review within 2 hours' },
+      { type: 'add',     content: '+5. If reason code is KEYWORD_MATCH: flag for policy team review (likely false positive)' },
+      { type: 'add',     content: '+6. NEVER send sellers to generic help center for a rejection they did not cause.' },
+      { type: 'context', content: ' ' },
+      { type: 'context', content: ' ### Category-Specific Rejection Codes' },
+    ],
+    injections: [
+      {
+        trigger: 'Seller frustrated that valid listing was rejected without clear reason',
+        condition: 'rejection_reason_code === KEYWORD_MATCH OR seller has > 95% compliance history',
+        instruction: 'Acknowledge that this may be a false positive. Do not defend the policy engine. Give a specific reason and a clear path to resolution or appeal.',
+        tone: 'Empathetic and specific. A seller who played by the rules and was rejected needs validation, not a policy lecture.',
+        example: '"I can see your listing for [item] was rejected by our automated policy check. Looking at the details, this appears to be a false positive triggered by the keyword [X]. I\'ve submitted this for human review — you should have a decision within 2 hours. I\'m sorry for the inconvenience."',
+      },
+    ],
+    roiPct: 13,
+    governanceNotes: 'Requires: Trust & Safety Engineering sign-off, Policy team review of false-positive threshold, Product approval for fast-track review SLA for Power Sellers.',
+  },
+};
+
 function dominantArchetype(recommendation: StrategicRecommendation): string {
   // Infer archetype from recommendation title keywords
   if (recommendation.title.includes('Timeout') || recommendation.title.includes('Circuit'))
@@ -280,12 +435,36 @@ function dominantArchetype(recommendation: StrategicRecommendation): string {
 
 let crCounter = 0;
 
+export function resetCrCounter(): void {
+  crCounter = 0;
+}
+
+function dominantArchetypeRecommerce(recommendation: StrategicRecommendation): string {
+  if (recommendation.title.includes('Boost') || recommendation.title.includes('Saga'))
+    return 'Boost Not Applied';
+  if (recommendation.title.includes('Payout') || recommendation.title.includes('Disbursement'))
+    return 'Payout Delayed';
+  if (recommendation.title.includes('Offer') || recommendation.title.includes('Notification'))
+    return 'Offer Ghosted';
+  if (recommendation.title.includes('Listing') || recommendation.title.includes('Rejection'))
+    return 'Listing Rejected';
+  return 'Boost Not Applied';
+}
+
 export function runArchitectAgent(
   recommendation: StrategicRecommendation,
   _insightCard: InsightCard,
+  mode: AppMode = 'FINTECH',
 ): ChangeRequestPackage {
-  const archetype = dominantArchetype(recommendation);
-  const template = ARCH_TEMPLATES[archetype] ?? ARCH_TEMPLATES['Timeout Loop'];
+  let archetype: string;
+  let template: ArchTemplate;
+  if (mode === 'RECOMMERCE') {
+    archetype = dominantArchetypeRecommerce(recommendation);
+    template = ARCH_TEMPLATES_RECOMMERCE[archetype] ?? ARCH_TEMPLATES_RECOMMERCE['Boost Not Applied'];
+  } else {
+    archetype = dominantArchetype(recommendation);
+    template = ARCH_TEMPLATES[archetype] ?? ARCH_TEMPLATES['Timeout Loop'];
+  }
   crCounter++;
 
   return {
@@ -302,6 +481,18 @@ export function runArchitectAgent(
 }
 
 // ─── AI-powered path ──────────────────────────────────────────────────────────
+const ARCHITECT_SYSTEM_RECOMMERCE = `You are the Architect agent in Sierra, an AI governance platform for Carousell recommerce marketplace.
+Given a strategic recommendation and analyst insight, produce a Change Request Package including a git-style policy diff and seller agent context injections.
+
+Return a JSON object with exactly these keys:
+- reasoning: 2-3 sentences explaining your architectural decisions
+- title: the change request title (e.g. "CR-R001 · Fix: ...")
+- policyDiff: array of objects, each with "type" (one of "meta", "header", "context", "add", "remove") and "content" (string). Must include 2 meta lines (--- a/... and +++ b/...), 1 header line (@@ ...), 2-3 context lines, 2-3 remove lines showing the old policy, and 8-14 add lines showing the new improved policy
+- contextInjections: array of 1-3 objects, each with "trigger" (string), "condition" (string), "instruction" (string), "tone" (string), and "example" (string with verbatim seller agent dialogue)
+- estimatedRoiPct: integer between 8 and 25
+- affectedPolicyFile: file path like "policies/seller-agent/topic-name.md"
+- governanceNotes: string listing required approvals from marketplace teams (Trust & Safety, Monetization, Finance, etc.)`;
+
 const ARCHITECT_SYSTEM = `You are the Architect agent in Sierra, a fintech operations intelligence platform for DBS Bank.
 Given a strategic recommendation and analyst insight, produce a Change Request Package including a git-style policy diff and context injections for a conversational AI agent.
 
@@ -317,9 +508,11 @@ Return a JSON object with exactly these keys:
 export async function runArchitectAgentAI(
   recommendation: StrategicRecommendation,
   insightCard: InsightCard,
+  mode: AppMode = 'FINTECH',
 ): Promise<ArchitectAIResult> {
   crCounter++;
   const crId = `CR-${String(crCounter).padStart(3, '0')}-${recommendation.clusterId}`;
+  const systemPrompt = mode === 'RECOMMERCE' ? ARCHITECT_SYSTEM_RECOMMERCE : ARCHITECT_SYSTEM;
 
   const userContent = `Cluster ID: ${recommendation.clusterId}
 Recommendation title: ${recommendation.title}
@@ -334,7 +527,7 @@ Affected API path: ${insightCard.affectedApiPath}
 Generate the Change Request Package JSON.`;
 
   try {
-    const { text, meta } = await callGemini(ARCHITECT_SYSTEM, userContent, 8192);
+    const { text, meta } = await callGemini(systemPrompt, userContent, 8192);
     const parsed = JSON.parse(extractJson(text)) as Omit<ChangeRequestPackage, 'clusterId' | 'id' | 'generatedAt'>;
     return {
       cr: { ...parsed, clusterId: recommendation.clusterId, id: crId, generatedAt: new Date().toISOString() },
@@ -342,6 +535,6 @@ Generate the Change Request Package JSON.`;
     };
   } catch (err) {
     console.error('[Sierra Architect] AI parse failed, using fallback:', err);
-    return { cr: runArchitectAgent(recommendation, insightCard), meta: null };
+    return { cr: runArchitectAgent(recommendation, insightCard, mode), meta: null };
   }
 }

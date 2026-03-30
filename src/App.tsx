@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { logs as baseLogs } from './data/logs';
+import { getLogsForMode } from './data/logs';
 import { runObserverAgent } from './engine/observerAgent';
 import { runAnalystAgent, runAnalystAgentAI } from './engine/analystAgent';
 import { runStrategistAgent, runStrategistAgentAI } from './engine/strategistAgent';
@@ -9,6 +9,7 @@ import type { ImportResult, GeminiCallRecord } from './store/useAppStore';
 import { GEMINI_MODEL } from './lib/aiClient';
 import type { GeminiCallMeta } from './lib/aiClient';
 import type { IntelligencePipeline, ChangeRequestPackage, FrictionLog, FrictionCluster } from './types';
+import type { AppMode } from './types';
 
 import { Header } from './components/layout/Header';
 import { StatusBar } from './components/layout/StatusBar';
@@ -36,6 +37,7 @@ async function runPipelineForCluster(
   cluster: FrictionCluster,
   allLogs: FrictionLog[],
   importedLogIds: Set<string>,
+  appMode: AppMode,
 ): Promise<{
   pipeline: IntelligencePipeline;
   cr: ChangeRequestPackage;
@@ -49,17 +51,17 @@ async function runPipelineForCluster(
 
   if (isImported) {
     // Analyst
-    const analystResult = await runAnalystAgentAI(cluster, allLogs);
+    const analystResult = await runAnalystAgentAI(cluster, allLogs, appMode);
     insightCard = analystResult.insightCard;
     geminiCalls.push(makeCallRecord('Analyst', analystResult.meta));
 
     // Strategist
-    const strategistResult = await runStrategistAgentAI(cluster, allLogs, insightCard);
+    const strategistResult = await runStrategistAgentAI(cluster, allLogs, insightCard, appMode);
     recommendation = strategistResult.recommendation;
     geminiCalls.push(makeCallRecord('Strategist', strategistResult.meta));
   } else {
-    insightCard = runAnalystAgent(cluster, allLogs);
-    recommendation = runStrategistAgent(cluster, allLogs, insightCard);
+    insightCard = runAnalystAgent(cluster, allLogs, appMode);
+    recommendation = runStrategistAgent(cluster, allLogs, insightCard, appMode);
   }
 
   const thinkingMs = Math.round(performance.now() - t0);
@@ -67,11 +69,11 @@ async function runPipelineForCluster(
 
   let cr: ChangeRequestPackage;
   if (isImported) {
-    const archResult = await runArchitectAgentAI(recommendation, insightCard);
+    const archResult = await runArchitectAgentAI(recommendation, insightCard, appMode);
     cr = archResult.cr;
     geminiCalls.push(makeCallRecord('Architect', archResult.meta));
   } else {
-    cr = runArchitectAgent(recommendation, insightCard);
+    cr = runArchitectAgent(recommendation, insightCard, appMode);
   }
 
   return { pipeline, cr, geminiCalls };
@@ -86,14 +88,16 @@ export default function App() {
   const setImportResult = useAppStore(s => s.setImportResult);
   const logs = useAppStore(s => s.logs);
   const importedLogIds = useAppStore(s => s.importedLogIds);
-  const initialized = useRef(false);
+  const appMode = useAppStore(s => s.appMode);
+  const prevMode = useRef<AppMode | null>(null);
 
   // ── Initial load: deterministic pipeline for base logs ──────────────────────
   useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
+    if (prevMode.current === appMode) return;
+    prevMode.current = appMode;
 
-    const clusters = runObserverAgent(baseLogs, 4);
+    const baseLogs = getLogsForMode(appMode);
+    const clusters = runObserverAgent(baseLogs, 4, appMode);
     setData(baseLogs, clusters);
 
     const pipelines: Record<string, IntelligencePipeline> = {};
@@ -106,7 +110,7 @@ export default function App() {
         setTimeout(() => {
           clusters.forEach(cluster => {
             const p = pipelines[cluster.id];
-            if (p) changeRequests[cluster.id] = runArchitectAgent(p.recommendation, p.insightCard);
+            if (p) changeRequests[cluster.id] = runArchitectAgent(p.recommendation, p.insightCard, appMode);
           });
           setChangeRequests({ ...changeRequests });
         }, 400);
@@ -118,8 +122,8 @@ export default function App() {
 
       setTimeout(() => {
         const t0 = performance.now();
-        const insightCard = runAnalystAgent(cluster, baseLogs);
-        const recommendation = runStrategistAgent(cluster, baseLogs, insightCard);
+        const insightCard = runAnalystAgent(cluster, baseLogs, appMode);
+        const recommendation = runStrategistAgent(cluster, baseLogs, insightCard, appMode);
         const thinkingMs = Math.round(performance.now() - t0);
 
         pipelines[cluster.id] = { clusterId: cluster.id, insightCard, recommendation, thinkingMs };
@@ -129,10 +133,10 @@ export default function App() {
     };
 
     setTimeout(() => runNext(0), 600);
-  }, [setData, setPipelines, setChangeRequests, setThinking, setAiPipelineStatus, setImportResult]);
+  }, [appMode, setData, setPipelines, setChangeRequests, setThinking, setAiPipelineStatus, setImportResult]);
 
   // ── Re-run pipeline when new logs are imported ───────────────────────────────
-  const prevLogCount = useRef(baseLogs.length);
+  const prevLogCount = useRef(0);
   useEffect(() => {
     if (logs.length <= prevLogCount.current) return;
 
@@ -149,7 +153,7 @@ export default function App() {
     const prevClusterIds = new Set(Object.keys(prevPipelines));
 
     // Re-cluster with full log set
-    const clusters = runObserverAgent(logs, 4);
+    const clusters = runObserverAgent(logs, 4, appMode);
     setData(logs, clusters);
 
     const importedClusters = clusters.filter(c => clusterHasImportedLog(c, importedLogIds));
@@ -165,7 +169,7 @@ export default function App() {
         setAiPipelineStatus(cluster.id, 'loading');
         setThinking(cluster.id);
         try {
-          const { pipeline, cr, geminiCalls } = await runPipelineForCluster(cluster, logs, importedLogIds);
+          const { pipeline, cr, geminiCalls } = await runPipelineForCluster(cluster, logs, importedLogIds, appMode);
           accPipelines[cluster.id] = pipeline;
           accCRs[cluster.id] = cr;
           setPipelines({ ...accPipelines });
@@ -206,12 +210,12 @@ export default function App() {
 
       setThinking(null);
     })();
-  }, [logs, importedLogIds, setData, setPipelines, setChangeRequests, setThinking, setAiPipelineStatus, setImportResult]);
+  }, [logs, importedLogIds, appMode, setData, setPipelines, setChangeRequests, setThinking, setAiPipelineStatus, setImportResult]);
 
   return (
     <div style={{
       height: '100vh', display: 'flex', flexDirection: 'column',
-      background: '#f6f5f3', overflow: 'hidden',
+      background: 'var(--color-bg, #f6f5f3)', overflow: 'hidden',
     }}>
       <Header />
       <ImpactBanner />

@@ -1,20 +1,21 @@
-import type { FrictionLog, FrictionCluster, ApiStatusCode } from '../types';
+import type { FrictionLog, FrictionCluster, ApiStatusCode, AppMode } from '../types';
 
 // ─── Feature extraction ───────────────────────────────────────────────────────
 const errorSeverity: Record<number, number> = { 402: 0.5, 408: 0.6, 500: 0.7, 503: 0.8, 504: 1.0 };
 
 type FeatureVector = [number, number, number, number, number, number, number];
 
-function toFeatureVector(log: FrictionLog): FeatureVector {
+function toFeatureVector(log: FrictionLog, mode: AppMode = 'FINTECH'): FeatureVector {
   const { latencyMs, retryCount, apiStatusCode } = log.systemContext;
   const { nps, creditScore, tenureMonths, tier } = log.userMetadata;
+  const topTier = mode === 'FINTECH' ? 'Platinum' : 'Power Seller';
   return [
     log.frictionScore,                                  // overall friction
     Math.min(latencyMs / 12000, 1),                     // latency norm
     retryCount / 4,                                     // retry norm
     errorSeverity[apiStatusCode] ?? 0.5,                // error severity
     (nps + 2) / 4,                                      // nps norm (0–1)
-    tier === 'Platinum' ? 1 : 0,                        // tier bit
+    tier === topTier ? 1 : 0,                           // tier bit
     Math.min(tenureMonths / 120, 1),                    // tenure norm
     // credit score unused in distance but kept for reporting
     Math.min((creditScore - 580) / 240, 1),
@@ -28,6 +29,14 @@ function euclidean(a: number[], b: number[]): number {
 }
 
 // ─── Cluster label templates ──────────────────────────────────────────────────
+const CLUSTER_META_RECOMMERCE: Record<string, { label: string; sentiment: string; color: string }> = {
+  '504': { label: 'Payout Blackout',    sentiment: 'Seller payouts stuck — funds disbursed but not received by sellers.',        color: '#ef4444' },
+  '408': { label: 'Offer Dead Zone',    sentiment: 'Buyer offers going undelivered — sellers never notified, GMV lost silently.', color: '#f59e0b' },
+  '402': { label: 'Listing Gate',       sentiment: 'Policy engine silently blocking valid seller listings from going live.',       color: '#a855f7' },
+  '503': { label: 'Sync Storm',         sentiment: 'Price sync failures causing stale listings and lost conversion opportunities.', color: '#3b82f6' },
+  '500': { label: 'Boost Blackhole',    sentiment: 'Paid boosts not applied — sellers charged but receiving zero uplift.',        color: '#22c55e' },
+};
+
 const CLUSTER_META: Record<string, { label: string; sentiment: string; color: string }> = {
   '504': {
     label: 'Timeout Cascade',
@@ -60,12 +69,14 @@ function labelCluster(
   dominantCode: ApiStatusCode,
   avgFriction: number,
   idx: number,
+  mode: AppMode = 'FINTECH',
 ): { label: string; sentiment: string; color: string } {
-  const meta = CLUSTER_META[String(dominantCode)];
+  const metaMap = mode === 'RECOMMERCE' ? CLUSTER_META_RECOMMERCE : CLUSTER_META;
+  const meta = metaMap[String(dominantCode)];
   if (meta) return meta;
   return {
     label: `Friction Group ${String.fromCharCode(65 + idx)}`,
-    sentiment: `Unresolved payment friction with avg score ${avgFriction.toFixed(2)}.`,
+    sentiment: `Unresolved friction with avg score ${avgFriction.toFixed(2)}.`,
     color: '#6b7280',
   };
 }
@@ -87,8 +98,8 @@ function initCentroids(vectors: number[][], k: number): number[][] {
   return centroids;
 }
 
-export function runObserverAgent(logs: FrictionLog[], k = 4): FrictionCluster[] {
-  const vectors = logs.map(toFeatureVector);
+export function runObserverAgent(logs: FrictionLog[], k = 4, mode: AppMode = 'FINTECH'): FrictionCluster[] {
+  const vectors = logs.map(l => toFeatureVector(l, mode));
   let centroids = initCentroids(vectors, k);
 
   let assignments: number[] = new Array(logs.length).fill(0);
@@ -136,12 +147,14 @@ export function runObserverAgent(logs: FrictionLog[], k = 4): FrictionCluster[] 
       Object.entries(codeCounts).sort((a, b) => b[1] - a[1])[0][0],
     ) as ApiStatusCode;
 
+    const topTierLabel = mode === 'FINTECH' ? 'Platinum' : 'Power Seller';
+    const lowerTierLabel = mode === 'FINTECH' ? 'Gold' : 'Individual';
     const tierBreakdown = {
-      Platinum: memberLogs.filter(l => l.userMetadata.tier === 'Platinum').length,
-      Gold: memberLogs.filter(l => l.userMetadata.tier === 'Gold').length,
+      Platinum: memberLogs.filter(l => l.userMetadata.tier === topTierLabel).length,
+      Gold: memberLogs.filter(l => l.userMetadata.tier === lowerTierLabel).length,
     };
 
-    const { label, sentiment, color } = labelCluster(dominantErrorCode, avgFriction, idx);
+    const { label, sentiment, color } = labelCluster(dominantErrorCode, avgFriction, idx, mode);
 
     return {
       id: `CLUSTER-${String.fromCharCode(65 + idx)}`,

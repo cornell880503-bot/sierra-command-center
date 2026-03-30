@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import type { FrictionLog } from '../../types';
 
-// Interpolate: low → light warm beige; high → deep crimson
-function frictionColor(score: number): string {
-  // Low: #f0e6d3 (warm cream) → High: #991b1b (deep red)
-  const r = Math.round(240 - (240 - 153) * Math.pow(score, 0.7));
-  const g = Math.round(230 - (230 - 27) * Math.pow(score, 0.6));
-  const b = Math.round(211 - (211 - 27) * score);
+// Interpolate: low → mode-aware light color; high → deep crimson
+function frictionColor(score: number, lowColor: [number, number, number]): string {
+  const [lr, lg, lb] = lowColor;
+  const r = Math.round(lr - (lr - 153) * Math.pow(score, 0.7));
+  const g = Math.round(lg - (lg - 27) * Math.pow(score, 0.6));
+  const b = Math.round(lb - (lb - 27) * score);
   return `rgb(${r},${g},${b})`;
 }
 
@@ -19,7 +19,10 @@ export function FrictionHeatmap() {
   const pipelines = useAppStore(s => s.pipelines);
   const selectedClusterId = useAppStore(s => s.selectedClusterId);
   const openLog = useAppStore(s => s.openLog);
+  const appMode = useAppStore(s => s.appMode);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
+  const lowColor: [number, number, number] = appMode === 'FINTECH' ? [240, 230, 211] : [255, 228, 230];
 
   const sorted = [...logs].sort((a, b) => b.frictionScore - a.frictionScore);
   const selectedCluster = clusters.find(c => c.id === selectedClusterId);
@@ -60,7 +63,9 @@ export function FrictionHeatmap() {
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', color: '#d1d5db' }}>Low</span>
           <div style={{
             width: '64px', height: '4px', borderRadius: '2px',
-            background: 'linear-gradient(to right, #f0e6d3, #991b1b)',
+            background: appMode === 'FINTECH'
+              ? 'linear-gradient(to right, #f0e6d3, #991b1b)'
+              : 'linear-gradient(to right, #ffe4e6, #991b1b)',
           }} />
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', color: '#d1d5db' }}>High</span>
           <div style={{ width: '1px', height: '14px', background: '#e5e7eb' }} />
@@ -111,7 +116,7 @@ export function FrictionHeatmap() {
               }}
               style={{
                 aspectRatio: '1', borderRadius: '4px',
-                background: frictionColor(log.frictionScore),
+                background: frictionColor(log.frictionScore, lowColor),
                 border: isHighlighted && selectedClusterId
                   ? `1.5px solid ${clusterColor}`
                   : '1px solid rgba(0,0,0,0.05)',

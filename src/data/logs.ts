@@ -1,4 +1,6 @@
+import type { AppMode, FrictionLog } from '../types';
 import { generateLogs } from './generateLogs';
-import type { FrictionLog } from '../types';
 
-export const logs: FrictionLog[] = generateLogs();
+export function getLogsForMode(mode: AppMode): FrictionLog[] {
+  return generateLogs(mode);
+}
