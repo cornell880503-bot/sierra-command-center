@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { getLogsForMode } from './data/logs';
 import { runObserverAgent } from './engine/observerAgent';
 import { runAnalystAgent, runAnalystAgentAI } from './engine/analystAgent';
@@ -89,7 +90,24 @@ export default function App() {
   const logs = useAppStore(s => s.logs);
   const importedLogIds = useAppStore(s => s.importedLogIds);
   const appMode = useAppStore(s => s.appMode);
+  const setAppMode = useAppStore(s => s.setAppMode);
   const prevMode = useRef<AppMode | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // ── Sync URL → appMode on initial load / back-forward navigation ─────────────
+  useEffect(() => {
+    const pathMode: AppMode = location.pathname.startsWith('/recommerce') ? 'RECOMMERCE' : 'FINTECH';
+    if (pathMode !== appMode) setAppMode(pathMode);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  // ── Sync appMode → URL when mode changes via toggle ──────────────────────────
+  useEffect(() => {
+    const expectedPath = appMode === 'RECOMMERCE' ? '/recommerce' : '/';
+    if (location.pathname !== expectedPath) navigate(expectedPath, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appMode]);
 
   // ── Initial load: deterministic pipeline for base logs ──────────────────────
   useEffect(() => {

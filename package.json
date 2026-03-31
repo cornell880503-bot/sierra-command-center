@@ -8,13 +8,14 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "serve dist -l tcp://0.0.0.0:8080"
+    "start": "serve dist -l tcp://0.0.0.0:8080 --single"
   },
   "dependencies": {
     "mammoth": "^1.12.0",
     "pdfjs-dist": "^5.5.207",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.2",
     "recharts": "^3.8.1",
     "serve": "^14.2.6",
     "zustand": "^5.0.12"
