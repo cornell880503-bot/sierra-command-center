@@ -35,32 +35,34 @@ export function Header() {
     }}>
       {/* Left */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-          <div style={{
-            width: '22px', height: '22px', borderRadius: '6px',
-            background: theme.logoGradient,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: `0 1px 3px ${theme.accent}4d`,
-          }}>
+        {appMode === 'FINTECH' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <div style={{
+                width: '22px', height: '22px', borderRadius: '6px',
+                background: theme.logoGradient,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 1px 3px ${theme.accent}4d`,
+              }}>
+                <span style={{
+                  fontFamily: 'var(--font-sans)', fontSize: '10px',
+                  fontWeight: 800, color: '#fff',
+                }}>S</span>
+              </div>
+              <span style={{
+                fontFamily: 'var(--font-sans)', fontSize: '14px',
+                fontWeight: 700, color: '#111827', letterSpacing: '-0.02em',
+              }}>Sierra</span>
+            </div>
+            <div style={{ width: '1px', height: '16px', background: '#e5e7eb' }} />
             <span style={{
-              fontFamily: 'var(--font-sans)', fontSize: '10px',
-              fontWeight: 800, color: '#fff',
-            }}>S</span>
-          </div>
-          <span style={{
-            fontFamily: 'var(--font-sans)', fontSize: '14px',
-            fontWeight: 700, color: '#111827', letterSpacing: '-0.02em',
-          }}>Sierra</span>
-        </div>
-
-        <div style={{ width: '1px', height: '16px', background: '#e5e7eb' }} />
-
-        <span style={{
-          fontFamily: 'var(--font-sans)', fontSize: '13px',
-          fontWeight: 500, color: '#6b7280',
-        }}>
-          Strategy Command Center
-        </span>
+              fontFamily: 'var(--font-sans)', fontSize: '13px',
+              fontWeight: 500, color: '#6b7280',
+            }}>
+              Strategy Command Center
+            </span>
+          </>
+        )}
 
         {/* Mode toggle */}
         <div style={{ display: 'flex', borderRadius: '6px', border: '1px solid #e5e7eb', overflow: 'hidden', marginRight: '8px' }}>

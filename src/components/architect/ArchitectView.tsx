@@ -2,6 +2,7 @@ import ReactDOM from 'react-dom';
 import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import type { ChangeRequestPackage, ContextInjection, SyncPhase } from '../../types';
+import type { AppMode } from '../../types';
 
 // ─── Terminal lines for deploy animation ─────────────────────────────────────
 const VALIDATION_LINES = [
@@ -38,6 +39,7 @@ export function ArchitectView() {
   const changeRequests = useAppStore(s => s.changeRequests);
   const syncStates = useAppStore(s => s.syncStates);
   const setSyncState = useAppStore(s => s.setSyncState);
+  const appMode = useAppStore(s => s.appMode);
 
   const cr = activeArchitectClusterId ? changeRequests[activeArchitectClusterId] : null;
   const syncState = activeArchitectClusterId ? syncStates[activeArchitectClusterId] : null;
@@ -80,10 +82,10 @@ export function ArchitectView() {
         overflow: 'hidden',
         animation: 'fadeIn 0.22s ease',
       }}>
-        <ModalHeader cr={cr} phase={phase} onClose={closeArchitectView} />
+        <ModalHeader cr={cr} phase={phase} onClose={closeArchitectView} appMode={appMode} />
 
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-          {phase === 'idle' && <IdleView cr={cr} onSync={handleSync} />}
+          {phase === 'idle' && <IdleView cr={cr} onSync={handleSync} appMode={appMode} />}
           {(phase === 'validating' || phase === 'deploying') && (
             <TerminalView syncState={syncState} />
           )}
@@ -143,8 +145,8 @@ function runSyncWorkflow(
 }
 
 // ─── Sub-views ────────────────────────────────────────────────────────────────
-function ModalHeader({ cr, phase, onClose }: {
-  cr: ChangeRequestPackage; phase: SyncPhase; onClose: () => void;
+function ModalHeader({ cr, phase, onClose, appMode }: {
+  cr: ChangeRequestPackage; phase: SyncPhase; onClose: () => void; appMode: AppMode;
 }) {
   const phaseLabel: Record<SyncPhase, string> = {
     idle: 'Draft Ready',
@@ -168,13 +170,15 @@ function ModalHeader({ cr, phase, onClose }: {
     }}>
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-          <div style={{
-            width: '18px', height: '18px', borderRadius: '4px',
-            background: 'linear-gradient(135deg, #00a86b 0%, #005c3b 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <span style={{ color: '#fff', fontSize: '9px', fontWeight: 800 }}>S</span>
-          </div>
+          {appMode === 'FINTECH' && (
+            <div style={{
+              width: '18px', height: '18px', borderRadius: '4px',
+              background: 'linear-gradient(135deg, #00a86b 0%, #005c3b 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ color: '#fff', fontSize: '9px', fontWeight: 800 }}>S</span>
+            </div>
+          )}
           <span style={{
             fontFamily: 'var(--font-mono)', fontSize: '11px',
             fontWeight: 600, color: '#111827',
@@ -233,7 +237,7 @@ function ModalHeader({ cr, phase, onClose }: {
   );
 }
 
-function IdleView({ cr, onSync }: { cr: ChangeRequestPackage; onSync: () => void }) {
+function IdleView({ cr, onSync, appMode }: { cr: ChangeRequestPackage; onSync: () => void; appMode: AppMode }) {
   const [activeTab, setActiveTab] = useState<'diff' | 'injection' | 'governance'>('diff');
 
   return (
@@ -302,7 +306,7 @@ function IdleView({ cr, onSync }: { cr: ChangeRequestPackage; onSync: () => void
           onMouseOut={e => (e.currentTarget.style.background = '#111827')}
         >
           <span style={{ fontSize: '13px' }}>↑</span>
-          Sync to Ghostwriter
+          {appMode === 'RECOMMERCE' ? 'Deploy to Carousell' : 'Sync to Ghostwriter'}
         </button>
       </div>
     </div>
